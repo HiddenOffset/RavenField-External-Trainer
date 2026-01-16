@@ -8,12 +8,12 @@
 int main()
 {
     //Get Proccess ID of RavenField
-    DWORD procId = GetProcessId("RavenField.exe");
+    DWORD procId = GetProcessId(L"RavenField.exe");
 
     //Get Module Base Address
     uintptr_t moduleBase = GetModuleBaseAddress(procId, L"RavenField.exe");
 
-    std::cout << "test << std::endl";
+    std::cout << "test" << std::endl;
     //Get A Handle to RavenField
 
     //Resolving the BaseAddress and going through the Pointer Chain

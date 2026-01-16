@@ -1,6 +1,6 @@
 #include "process.h"
 
-DWORD GetProccessID(const wchar_t* proc)
+DWORD GetProcessId(const wchar_t* proc)
 {
 	DWORD procID = 0;
 	HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -44,6 +44,7 @@ uintptr_t GetModuleBaseAddress(DWORD procId, const wchar_t* modName)
 			} while (Module32Next(hSnap, &modEntry));
 		}
 	}
+	return modBaseAddr;
 }
 
 uintptr_t findDMAAddy(HANDLE hProc, uintptr_t ptr, std::vector<unsigned int> offsets)
