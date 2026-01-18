@@ -16,6 +16,9 @@
     <Filter Include="process">
       <UniqueIdentifier>{45b85b4d-a70e-4fba-8f04-34604bf39856}</UniqueIdentifier>
     </Filter>
+    <Filter Include="addresses">
+      <UniqueIdentifier>{2882df53-5d6b-4611-ba8c-43982c1b54cc}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="process.cpp">
@@ -28,6 +31,9 @@
   <ItemGroup>
     <ClInclude Include="process.h">
       <Filter>process</Filter>
+    </ClInclude>
+    <ClInclude Include="addresses.h">
+      <Filter>addresses</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

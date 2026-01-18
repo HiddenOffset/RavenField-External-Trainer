@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="addresses.h" />
     <ClInclude Include="process.h" />
   </ItemGroup>
   <ItemGroup>

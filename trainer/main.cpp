@@ -81,7 +81,7 @@ int main()
 
     float modifiedHealth = 9999.0f;
     bool healthEnabled = false;
-    bool lastHealthState = false; // Track previous state
+    bool lastHealthState = false;
 
     PrintMenu(healthEnabled); // Initial menu draw
 
