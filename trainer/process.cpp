@@ -1,4 +1,5 @@
 #include "process.h"
+#include <iostream>
 
 DWORD GetProcessId(const wchar_t* proc)
 {
@@ -36,13 +37,17 @@ uintptr_t GetModuleBaseAddress(DWORD procId, const wchar_t* modName)
 		{
 			do
 			{
+				std::wcout << L"Found module: " << modEntry.szModule << L" at 0x" << std::hex << (uintptr_t)modEntry.modBaseAddr << std::dec << std::endl;
+				
 				if (!_wcsicmp(modEntry.szModule, modName))
 				{
 					modBaseAddr = (uintptr_t)modEntry.modBaseAddr;
+					std::wcout << L"MATCHED: " << modEntry.szModule << L" at 0x" << std::hex << modBaseAddr << std::dec << std::endl;
 					break;
 				}
 			} while (Module32Next(hSnap, &modEntry));
 		}
+		CloseHandle(hSnap);
 	}
 	return modBaseAddr;
 }
