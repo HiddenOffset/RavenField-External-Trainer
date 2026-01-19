@@ -3,27 +3,38 @@
 #include <cstdint>
 
 struct Address {
-    const char* name;  // Changed from const wchar_t*
+    const char* name;
     uintptr_t baseOffset;
     std::vector<unsigned int> offsets;
-    const char* type; // "float", "int", "double", etc.
+    const char* type;
 };
 
 namespace GameAddresses {
-    // UnityPlayer.dll base addresses
     const Address HEALTH = {
-        "Health",  // Regular string
+        "Health",
         0x1A6D6A0,
         { 0x128, 0x38, 0x60, 0x110, 0x128 },
         "float"
     };
 
-    const Address HEALTH_WRITE = {
-        "Health Write Instruction",
-        0xAE4,
-        {},
-        "instruction"
+    const Address AMMO = {
+        "Ammo",
+        0x01A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x130 },
+        "int"
     };
 
-    // TODO: Add ammo and stamina addresses later
+    const Address AMMO_RESERVE = {
+        "Ammo Reserve",
+        0x01A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x1DC },
+        "int"
+    };
+
+    const Address Y_AXIS = {
+        "Y-Axis",
+        0x019EA110,
+        { 0x10, 0x60, 0x0, 0x60, 0x0, 0x1FC },
+        "float"
+    };
 }
