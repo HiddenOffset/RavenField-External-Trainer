@@ -16,22 +16,23 @@ void PrintWelcome()
     
     // White text for "field Trainer EA32"
     SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-    std::cout << "field Trainer EA32" << std::endl;
+    std::cout << "field Trainer EA32, by take1" << std::endl;
     std::cout << std::endl;
     
-    Sleep(2000); // 2 seconds
+    Sleep(1000); // 1 seconds
     system("cls"); // Clear console
 }
 
 void PrintMenu(bool healthEnabled, bool ammoEnabled, bool ammoReserveEnabled)
 {
     system("cls"); // Clear console before printing menu
-    std::cout << "========== RAVENFIELD TRAINER ==========" << std::endl;
+    std::cout << "============== version 1.0  ===========" << std::endl;
     std::cout << std::endl;
     std::cout << "Features:" << std::endl;
     std::cout << "[NUMPAD 1] Health: " << (healthEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[NUMPAD 2] Ammo: " << (ammoEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[NUMPAD 3] Ammo Reserve: " << (ammoReserveEnabled ? "ON" : "OFF") << std::endl;
+    std::cout << "[NUMPAD 4] Raise Y-Axis by +0.125" << std::endl;
     std::cout << "[INSERT]   Exit" << std::endl;
     std::cout << std::endl;
     std::cout << "========================================" << std::endl;
@@ -52,6 +53,7 @@ int main()
     DWORD procId = GetProcessId(L"ravenfield.exe");
     if (procId == 0) {
         std::cout << "Failed to get process ID. Make sure RavenField.exe is running." << std::endl;
+        Sleep(2000);
         return 1;
     }
 
@@ -61,6 +63,7 @@ int main()
     uintptr_t moduleBase = GetModuleBaseAddress(procId, L"UnityPlayer.dll");
     if (moduleBase == 0) {
         std::cout << "Failed to get module base address." << std::endl;
+        Sleep(2000);
         return 1;
     }
 
@@ -68,6 +71,7 @@ int main()
     HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);
     if (hProcess == NULL) {
         std::cout << "Failed to open process." << std::endl;
+        Sleep(2000);
         return 1;
     }
 
@@ -75,8 +79,9 @@ int main()
     uintptr_t healthAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
     uintptr_t ammoAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO);
     uintptr_t ammoReserveAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO_RESERVE);
+    uintptr_t yAxisAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::Y_AXIS);
 
-    if (healthAddr == 0 || ammoAddr == 0 || ammoReserveAddr == 0) {
+    if (healthAddr == 0 || ammoAddr == 0 || ammoReserveAddr == 0 || yAxisAddr == 0) {
         std::cout << "Failed to resolve one or more addresses." << std::endl;
         CloseHandle(hProcess);
         return 1;
@@ -96,6 +101,9 @@ int main()
     bool lastHealthState = false;
     bool lastAmmoState = false;
     bool lastAmmoReserveState = false;
+
+    // One-shot press state
+    bool lastYAxisPress = false;
 
     PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled); // Initial menu draw
 
@@ -153,6 +161,22 @@ int main()
             }
             Sleep(200); // Debounce
         }
+
+        // NUMPAD 4 to raise Y-axis by +0.125 (0x64) — one-shot per press
+        bool yPress = (GetAsyncKeyState(0x64) & 0x8000) != 0;
+        if (yPress && !lastYAxisPress) {
+            uintptr_t newYAxisAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::Y_AXIS);
+            if (newYAxisAddr != 0 && newYAxisAddr != yAxisAddr) {
+                yAxisAddr = newYAxisAddr;
+            }
+
+            float currentY = 0.0f;
+            if (ReadProcessMemory(hProcess, (BYTE*)yAxisAddr, &currentY, sizeof(currentY), 0)) {
+                currentY += 0.125f;
+                WriteProcessMemory(hProcess, (BYTE*)yAxisAddr, &currentY, sizeof(currentY), 0);
+            }
+        }
+        lastYAxisPress = yPress;
 
 		// Re-resolve dynamic addresses and enforce values
         if (healthEnabled) {
