@@ -19,6 +19,9 @@
     <Filter Include="addresses">
       <UniqueIdentifier>{2882df53-5d6b-4611-ba8c-43982c1b54cc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="memory">
+      <UniqueIdentifier>{a5dc1712-7805-4fc7-8c5a-324d8b4263fa}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="process.cpp">
@@ -27,6 +30,9 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="mem.cpp">
+      <Filter>memory</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="process.h">
@@ -34,6 +40,9 @@
     </ClInclude>
     <ClInclude Include="addresses.h">
       <Filter>addresses</Filter>
+    </ClInclude>
+    <ClInclude Include="mem.h">
+      <Filter>memory</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
