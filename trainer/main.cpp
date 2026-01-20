@@ -154,6 +154,35 @@ int main()
             Sleep(200); // Debounce
         }
 
+		// Re-resolve dynamic addresses and enforce values
+        if (healthEnabled) {
+            uintptr_t newHealthAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
+            if (newHealthAddr != 0 && newHealthAddr != healthAddr) {
+                healthAddr = newHealthAddr;
+            }
+            // Continuously enforce health value on the active player entity
+            float healthValue = 9999.0f;
+            WriteProcessMemory(hProcess, (BYTE*)healthAddr, &healthValue, sizeof(healthValue), 0);
+        }
+
+        if (ammoEnabled) {
+            uintptr_t newAmmoAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO);
+            if (newAmmoAddr != 0 && newAmmoAddr != ammoAddr) {
+                ammoAddr = newAmmoAddr;
+            }
+            int ammoValue = 9999;
+            WriteProcessMemory(hProcess, (BYTE*)ammoAddr, &ammoValue, sizeof(ammoValue), 0);
+        }
+
+        if (ammoReserveEnabled) {
+            uintptr_t newAmmoReserveAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO_RESERVE);
+            if (newAmmoReserveAddr != 0 && newAmmoReserveAddr != ammoReserveAddr) {
+                ammoReserveAddr = newAmmoReserveAddr;
+            }
+            int ammoReserveValue = 9999;
+            WriteProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &ammoReserveValue, sizeof(ammoReserveValue), 0);
+        }
+
         // Only redraw menu if state changed
         if (healthEnabled != lastHealthState || ammoEnabled != lastAmmoState || 
             ammoReserveEnabled != lastAmmoReserveState) {
