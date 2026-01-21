@@ -37,4 +37,39 @@ namespace GameAddresses {
         { 0x10, 0x60, 0x0, 0x60, 0x0, 0x1FC },
         "float"
     };
+
+    const Address GUN_SPREAD = {
+        "Gun Spread",
+        0x01A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x184 },
+        "float"
+    };
+
+    const Address NO_OVERHEAT = {
+        "No OverHeat",
+        0x01A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x198 },
+        "float"
+    };
+
+    const Address IGNORE_PLAYER = {
+        "Ignore Player",
+        0x1A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0x2A3 },
+        "bool"
+    };
+
+    const Address WALK_BOBBING = {
+        "Walk Bobbing",
+        0x1A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x120 },
+        "float"
+    };
+
+    const Address SPEED_MULTI = {
+        "Speed Multi",
+        0x01A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0x360 },
+        "float"
+    };
 }

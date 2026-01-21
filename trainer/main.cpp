@@ -23,16 +23,23 @@ void PrintWelcome()
     system("cls"); // Clear console
 }
 
-void PrintMenu(bool healthEnabled, bool ammoEnabled, bool ammoReserveEnabled)
+void PrintMenu(bool healthEnabled, bool ammoEnabled, bool ammoReserveEnabled,
+               bool gunSpreadEnabled, bool overHeatEnabled, bool ignorePlayerEnabled,
+               bool walkBobbingEnabled, float speedMultiValue)
 {
     system("cls"); // Clear console before printing menu
-    std::cout << "============== version 1.0  ===========" << std::endl;
+    std::cout << "============== version 1.1  ===========" << std::endl;
     std::cout << std::endl;
     std::cout << "Features:" << std::endl;
     std::cout << "[NUMPAD 1] Health: " << (healthEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[NUMPAD 2] Ammo: " << (ammoEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[NUMPAD 3] Ammo Reserve: " << (ammoReserveEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[NUMPAD 4] Raise Y-Axis by +0.125" << std::endl;
+    std::cout << "[NUMPAD 5] No Gun Spread: " << (gunSpreadEnabled ? "ON" : "OFF") << std::endl;
+    std::cout << "[NUMPAD 6] No OverHeat: " << (overHeatEnabled ? "ON" : "OFF") << std::endl;
+    std::cout << "[NUMPAD 7] Ignore Player: " << (ignorePlayerEnabled ? "ON" : "OFF") << std::endl;
+    std::cout << "[NUMPAD 8] Walk Bobbing: " << (walkBobbingEnabled ? "OFF" : "ON") << std::endl;
+    std::cout << "[NUMPAD 9] Speed Multiplier: " << speedMultiValue << "x" << std::endl;
     std::cout << "[INSERT]   Exit" << std::endl;
     std::cout << std::endl;
     std::cout << "========================================" << std::endl;
@@ -76,12 +83,19 @@ int main()
     }
 
     // Resolve all addresses
-    uintptr_t healthAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
-    uintptr_t ammoAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO);
-    uintptr_t ammoReserveAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO_RESERVE);
-    uintptr_t yAxisAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::Y_AXIS);
+    uintptr_t healthAddr       = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
+    uintptr_t ammoAddr         = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO);
+    uintptr_t ammoReserveAddr  = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO_RESERVE);
+    uintptr_t yAxisAddr        = ResolveAddress(hProcess, moduleBase, GameAddresses::Y_AXIS);
+    uintptr_t gunSpreadAddr    = ResolveAddress(hProcess, moduleBase, GameAddresses::GUN_SPREAD);
+    uintptr_t overHeatAddr     = ResolveAddress(hProcess, moduleBase, GameAddresses::NO_OVERHEAT);
+    uintptr_t ignorePlayerAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::IGNORE_PLAYER);
+    uintptr_t walkBobbingAddr  = ResolveAddress(hProcess, moduleBase, GameAddresses::WALK_BOBBING);
+    uintptr_t speedMultiAddr   = ResolveAddress(hProcess, moduleBase, GameAddresses::SPEED_MULTI);
 
-    if (healthAddr == 0 || ammoAddr == 0 || ammoReserveAddr == 0 || yAxisAddr == 0) {
+    if (healthAddr == 0 || ammoAddr == 0 || ammoReserveAddr == 0 || yAxisAddr == 0 ||
+        gunSpreadAddr == 0 || overHeatAddr == 0 || ignorePlayerAddr == 0 ||
+        walkBobbingAddr == 0 || speedMultiAddr == 0) {
         std::cout << "Failed to resolve one or more addresses." << std::endl;
         CloseHandle(hProcess);
         return 1;
@@ -91,21 +105,41 @@ int main()
 
     // Stored values for toggling
     float storedHealth = 0;
-    int storedAmmo = 0;
-    int storedAmmoReserve = 0;
+    int   storedAmmo = 0;
+    int   storedAmmoReserve = 0;
+    float storedGunSpread = 0.0f;
+    float storedOverHeat = 0.0f;
+    bool  storedIgnorePlayer = false;
+    float storedWalkBobbing = 0.0f;
 
     // Feature toggles
     bool healthEnabled = false;
     bool ammoEnabled = false;
     bool ammoReserveEnabled = false;
+    bool gunSpreadEnabled = false;
+    bool overHeatEnabled = false;
+    bool ignorePlayerEnabled = false;
+    bool walkBobbingEnabled = false;
+
+    // State tracking for menu redraw
     bool lastHealthState = false;
     bool lastAmmoState = false;
     bool lastAmmoReserveState = false;
+    bool lastGunSpreadState = false;
+    bool lastOverHeatState = false;
+    bool lastIgnorePlayerState = false;
+    bool lastWalkBobbingState = false;
+    float lastSpeedMultiValue = 1.0f;
 
-    // One-shot press state
+    // Y-axis one-shot press state
     bool lastYAxisPress = false;
+    // Speed multiplier cycling
+    bool lastSpeedPress = false;
+    float speedMultiValue = 1.0f;
 
-    PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled); // Initial menu draw
+    PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled,
+              gunSpreadEnabled, overHeatEnabled, ignorePlayerEnabled,
+              walkBobbingEnabled, speedMultiValue); // Initial menu draw
 
     // Main loop
     while (true) {
@@ -119,12 +153,10 @@ int main()
             healthEnabled = !healthEnabled;
             
             if (healthEnabled) {
-                // Read current value before changing
                 ReadProcessMemory(hProcess, (BYTE*)healthAddr, &storedHealth, sizeof(storedHealth), 0);
                 float healthValue = 9999.0f;
                 WriteProcessMemory(hProcess, (BYTE*)healthAddr, &healthValue, sizeof(healthValue), 0);
             } else {
-                // Write back stored value
                 WriteProcessMemory(hProcess, (BYTE*)healthAddr, &storedHealth, sizeof(storedHealth), 0);
             }
             Sleep(200); // Debounce
@@ -135,12 +167,10 @@ int main()
             ammoEnabled = !ammoEnabled;
             
             if (ammoEnabled) {
-                // Read current value before changing
                 ReadProcessMemory(hProcess, (BYTE*)ammoAddr, &storedAmmo, sizeof(storedAmmo), 0);
                 int ammoValue = 9999;
                 WriteProcessMemory(hProcess, (BYTE*)ammoAddr, &ammoValue, sizeof(ammoValue), 0);
             } else {
-                // Write back stored value
                 WriteProcessMemory(hProcess, (BYTE*)ammoAddr, &storedAmmo, sizeof(storedAmmo), 0);
             }
             Sleep(200); // Debounce
@@ -151,12 +181,10 @@ int main()
             ammoReserveEnabled = !ammoReserveEnabled;
             
             if (ammoReserveEnabled) {
-                // Read current value before changing
                 ReadProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &storedAmmoReserve, sizeof(storedAmmoReserve), 0);
                 int ammoReserveValue = 9999;
                 WriteProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &ammoReserveValue, sizeof(ammoReserveValue), 0);
             } else {
-                // Write back stored value
                 WriteProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &storedAmmoReserve, sizeof(storedAmmoReserve), 0);
             }
             Sleep(200); // Debounce
@@ -178,13 +206,80 @@ int main()
         }
         lastYAxisPress = yPress;
 
-		// Re-resolve dynamic addresses and enforce values
+        // NUMPAD 5 to toggle no gun spread (0x65) — continuous -1.0f
+        if (GetAsyncKeyState(0x65) & 0x8000) {
+            gunSpreadEnabled = !gunSpreadEnabled;
+
+            if (gunSpreadEnabled) {
+                ReadProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &storedGunSpread, sizeof(storedGunSpread), 0);
+                float spreadValue = -1.0f;
+                WriteProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &spreadValue, sizeof(spreadValue), 0);
+            } else {
+                WriteProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &storedGunSpread, sizeof(storedGunSpread), 0);
+            }
+            Sleep(200); // Debounce
+        }
+
+        // NUMPAD 6 to toggle no overheat (0x66) — continuous 0.0f
+        if (GetAsyncKeyState(0x66) & 0x8000) {
+            overHeatEnabled = !overHeatEnabled;
+
+            if (overHeatEnabled) {
+                ReadProcessMemory(hProcess, (BYTE*)overHeatAddr, &storedOverHeat, sizeof(storedOverHeat), 0);
+                float overHeatValue = 0.0f;
+                WriteProcessMemory(hProcess, (BYTE*)overHeatAddr, &overHeatValue, sizeof(overHeatValue), 0);
+            } else {
+                WriteProcessMemory(hProcess, (BYTE*)overHeatAddr, &storedOverHeat, sizeof(storedOverHeat), 0);
+            }
+            Sleep(200); // Debounce
+        }
+
+        // NUMPAD 7 to toggle ignore player (0x67) — bool 0/1
+        if (GetAsyncKeyState(0x67) & 0x8000) {
+            ignorePlayerEnabled = !ignorePlayerEnabled;
+
+            ReadProcessMemory(hProcess, (BYTE*)ignorePlayerAddr, &storedIgnorePlayer, sizeof(storedIgnorePlayer), 0);
+            bool value = ignorePlayerEnabled ? true : storedIgnorePlayer;
+            WriteProcessMemory(hProcess, (BYTE*)ignorePlayerAddr, &value, sizeof(value), 0);
+            Sleep(200); // Debounce
+        }
+
+        // NUMPAD 8 to toggle walk bobbing (0x68) — 0 disables, restore on OFF
+        if (GetAsyncKeyState(0x68) & 0x8000) {
+            walkBobbingEnabled = !walkBobbingEnabled;
+
+            if (walkBobbingEnabled) {
+                ReadProcessMemory(hProcess, (BYTE*)walkBobbingAddr, &storedWalkBobbing, sizeof(storedWalkBobbing), 0);
+                float bobValue = 0.0f; // disable bobbing
+                WriteProcessMemory(hProcess, (BYTE*)walkBobbingAddr, &bobValue, sizeof(bobValue), 0);
+            } else {
+                WriteProcessMemory(hProcess, (BYTE*)walkBobbingAddr, &storedWalkBobbing, sizeof(storedWalkBobbing), 0);
+            }
+            Sleep(200); // Debounce
+        }
+
+        // NUMPAD 9 to cycle speed multiplier (0x69): 1 -> 2 -> 3 -> 1
+        bool speedPress = (GetAsyncKeyState(0x69) & 0x8000) != 0;
+        if (speedPress && !lastSpeedPress) {
+            uintptr_t newSpeedAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::SPEED_MULTI);
+            if (newSpeedAddr != 0 && newSpeedAddr != speedMultiAddr) {
+                speedMultiAddr = newSpeedAddr;
+            }
+
+            speedMultiValue += 1.0f;
+            if (speedMultiValue > 3.0f) {
+                speedMultiValue = 1.0f;
+            }
+            WriteProcessMemory(hProcess, (BYTE*)speedMultiAddr, &speedMultiValue, sizeof(speedMultiValue), 0);
+        }
+        lastSpeedPress = speedPress;
+
+        // Re-resolve dynamic addresses and enforce values
         if (healthEnabled) {
             uintptr_t newHealthAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
             if (newHealthAddr != 0 && newHealthAddr != healthAddr) {
                 healthAddr = newHealthAddr;
             }
-            // Continuously enforce health value on the active player entity
             float healthValue = 9999.0f;
             WriteProcessMemory(hProcess, (BYTE*)healthAddr, &healthValue, sizeof(healthValue), 0);
         }
@@ -207,13 +302,65 @@ int main()
             WriteProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &ammoReserveValue, sizeof(ammoReserveValue), 0);
         }
 
+        if (gunSpreadEnabled) {
+            uintptr_t newGunSpreadAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::GUN_SPREAD);
+            if (newGunSpreadAddr != 0 && newGunSpreadAddr != gunSpreadAddr) {
+                gunSpreadAddr = newGunSpreadAddr;
+            }
+            float spreadValue = -1.0f;
+            WriteProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &spreadValue, sizeof(spreadValue), 0);
+        }
+
+        if (overHeatEnabled) {
+            uintptr_t newOverHeatAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::NO_OVERHEAT);
+            if (newOverHeatAddr != 0 && newOverHeatAddr != overHeatAddr) {
+                overHeatAddr = newOverHeatAddr;
+            }
+            float overHeatValue = 0.0f;
+            WriteProcessMemory(hProcess, (BYTE*)overHeatAddr, &overHeatValue, sizeof(overHeatValue), 0);
+        }
+
+        if (ignorePlayerEnabled) {
+            uintptr_t newIgnoreAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::IGNORE_PLAYER);
+            if (newIgnoreAddr != 0 && newIgnoreAddr != ignorePlayerAddr) {
+                ignorePlayerAddr = newIgnoreAddr;
+            }
+            bool value = true;
+            WriteProcessMemory(hProcess, (BYTE*)ignorePlayerAddr, &value, sizeof(value), 0);
+        }
+
+        if (walkBobbingEnabled) {
+            uintptr_t newWalkAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::WALK_BOBBING);
+            if (newWalkAddr != 0 && newWalkAddr != walkBobbingAddr) {
+                walkBobbingAddr = newWalkAddr;
+            }
+            float bobValue = 0.0f;
+            WriteProcessMemory(hProcess, (BYTE*)walkBobbingAddr, &bobValue, sizeof(bobValue), 0);
+        }
+
+        // Always enforce selected speed multiplier value
+        uintptr_t newSpeedAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::SPEED_MULTI);
+        if (newSpeedAddr != 0 && newSpeedAddr != speedMultiAddr) {
+            speedMultiAddr = newSpeedAddr;
+        }
+        WriteProcessMemory(hProcess, (BYTE*)speedMultiAddr, &speedMultiValue, sizeof(speedMultiValue), 0);
+
         // Only redraw menu if state changed
         if (healthEnabled != lastHealthState || ammoEnabled != lastAmmoState || 
-            ammoReserveEnabled != lastAmmoReserveState) {
-            PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled);
+            ammoReserveEnabled != lastAmmoReserveState || gunSpreadEnabled != lastGunSpreadState ||
+            overHeatEnabled != lastOverHeatState || ignorePlayerEnabled != lastIgnorePlayerState ||
+            walkBobbingEnabled != lastWalkBobbingState || speedMultiValue != lastSpeedMultiValue) {
+            PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled,
+                      gunSpreadEnabled, overHeatEnabled, ignorePlayerEnabled,
+                      walkBobbingEnabled, speedMultiValue);
             lastHealthState = healthEnabled;
             lastAmmoState = ammoEnabled;
             lastAmmoReserveState = ammoReserveEnabled;
+            lastGunSpreadState = gunSpreadEnabled;
+            lastOverHeatState = overHeatEnabled;
+            lastIgnorePlayerState = ignorePlayerEnabled;
+            lastWalkBobbingState = walkBobbingEnabled;
+            lastSpeedMultiValue = speedMultiValue;
         }
 
         Sleep(5);
@@ -224,3 +371,13 @@ int main()
     std::cout << "Exiting Ravenfield Trainer..." << std::endl;
     return 0;
 }
+
+//new features in next update:
+/*
+* - improved speed hack precision
+* - better UI/UX for menu
+* - additional toggles as needed
+* - configurable hotkeys
+* - enhanced stability and performance
+* - thorough testing and validation
+*/
