@@ -1,7 +1,7 @@
 # Ravenfield Trainer EA32
 
 ## What’s Ravenfield?
-Ravenfield is a single-player/team-based shooter with bots. No always-online or anti-cheat—great for tinkering in a local sandbox.
+Ravenfield is a single-player/team-based shooter with bots. 
 
 ## What this project is
 A small external trainer for the EA32 build of Ravenfield. It finds key player stats in memory, then reads/writes them to give tweaks (infinite health/ammo, no spread/overheat, faster movement, etc.).
