@@ -32,8 +32,3 @@ A small external trainer for the EA32 build of Ravenfield. It finds key player s
 5. Run the trainer **as Administrator** (needed for process memory access).
 6. Use the numpad hotkeys in-game.
 
-## How it works (simple version)
-- Each stat lives at a dynamic address: `moduleBase (UnityPlayer.dll) + baseOffset + multi-level offsets`.
-- The trainer goes through the pointer chain at runtime (see `addresses.h` for base offsets and offsets).
-- Reading/writing is done with WinAPI (`ReadProcessMemory`, `WriteProcessMemory`).
-- Hotkeys that writes so you can toggle or bump values on demand.
