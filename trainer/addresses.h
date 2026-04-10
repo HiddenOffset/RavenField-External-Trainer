@@ -20,14 +20,14 @@ namespace GameAddresses {
     const Address AMMO = {
         "Ammo",
         0x01A6D6A0,
-        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x130 },
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x14C },
         "int"
     };
 
     const Address AMMO_RESERVE = {
         "Ammo Reserve",
         0x01A6D6A0,
-        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x1DC },
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x1F8 },
         "int"
     };
 
@@ -41,14 +41,14 @@ namespace GameAddresses {
     const Address GUN_SPREAD = {
         "Gun Spread",
         0x01A6D6A0,
-        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x184 },
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x1A0 },
         "float"
     };
 
     const Address NO_OVERHEAT = {
         "No OverHeat",
         0x01A6D6A0,
-        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x198 },
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x1B4 },
         "float"
     };
 
@@ -59,10 +59,24 @@ namespace GameAddresses {
         "bool"
     };
 
-    const Address WALK_BOBBING = {
-        "Walk Bobbing",
+    const Address WALK_BOB_MULTI = {
+        "Walk Bob Multi",
         0x1A6D6A0,
-        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x120 },
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x138 },
+        "float"
+    };
+
+    const Address SPRINT_BOB_MULTI = {
+        "Sprint Bob Multi",
+        0x1A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x13C },
+        "float"
+    };
+
+    const Address PRONE_BOB_MULTI = {
+        "Prone Bob Multi",
+        0x1A6D6A0,
+        { 0x128, 0x38, 0x60, 0x110, 0xA0, 0x140 },
         "float"
     };
 
