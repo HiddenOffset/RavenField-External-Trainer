@@ -1,10 +1,10 @@
-# Ravenfield Trainer EA33
+# Ravenfield Trainer EA39 (updated 9/21/26)
 
 ## What’s Ravenfield?
 Ravenfield is a single-player/team-based shooter with bots. 
 
 ## What this project is
-A small external trainer for the EA33 build of Ravenfield. It finds key player stats in memory, then reads/writes them to give tweaks (infinite health/ammo, no spread/overheat, faster movement, etc.). This project has been updated to version 1.2 to remain compatible with the latest game update.
+A small external trainer for the EA39 build of Ravenfield. It finds key player stats in memory, then reads/writes them to give tweaks (infinite health/ammo, no spread/overheat, faster movement, etc.). This project has been updated to version 1.2 to remain compatible with the latest game update.
 
 ## Features & hotkeys
 - Numpad 1: Toggle health lock 
@@ -21,13 +21,13 @@ A small external trainer for the EA33 build of Ravenfield. It finds key player s
 ## Requirements
 - Visual Studio 2026 (or compatible MSVC toolset)
 - Windows (trainer opens the game process)
-- Ravenfield EA33 running (target module: `UnityPlayer.dll`)
-- Suggested build: x64 Release (matches the game’s 64-bit EA33 build)
+- Ravenfield EA39 running (target module: `UnityPlayer.dll`)
+- Suggested build: x64 Release (matches the game’s 64-bit EA39 build)
 
 ## Build & run
 1. Open the solution in Visual Studio.
 2. Set configuration to **Release | Win32** (x86).
 3. Build the project.
-4. Launch Ravenfield EA33.
+4. Launch Ravenfield EA39.
 5. Run the trainer **as Administrator** (needed for process memory access).
 6. Use the numpad hotkeys in-game.
