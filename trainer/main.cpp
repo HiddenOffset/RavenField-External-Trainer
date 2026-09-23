@@ -28,7 +28,7 @@ void PrintMenu(bool healthEnabled, bool ammoEnabled, bool ammoReserveEnabled,
                bool weaponBobbingEnabled, float speedMultiValue)
 {
     system("cls"); // Clear console before printing menu
-    std::cout << "============== version 1.1  ===========" << std::endl;
+    std::cout << "============== version 1.2  ===========" << std::endl;
     std::cout << std::endl;
     std::cout << "Features:" << std::endl;
     std::cout << "[NUMPAD 1] Health: " << (healthEnabled ? "ON" : "OFF") << std::endl;
