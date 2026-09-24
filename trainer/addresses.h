@@ -98,4 +98,27 @@ namespace GameAddresses {
         { 0x128, 0x48, 0x60, 0x178, 0x20, 0x360 },
         "float"
     };
+
+
+    // Plyaer xyz position 
+    const Address POSITION_X = {
+    "Position X",
+    0x01A6D6A0,
+    { 0x128, 0x48, 0x60, 0x178, 0x20, 0x2EC },
+    "float"
+    };
+
+    const Address POSITION_Y = {
+        "Position Y",
+        0x01A6D6A0,
+        { 0x128, 0x48, 0x60, 0x178, 0x20, 0x2F0 },
+        "float"
+    };
+
+    const Address POSITION_Z = {
+        "Position Z",
+        0x01A6D6A0,
+        { 0x128, 0x48, 0x60, 0x178, 0x20, 0x2F4 },
+        "float"
+    };
 }
