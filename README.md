@@ -26,7 +26,7 @@ A small external trainer for the EA39 build of Ravenfield. It finds key player s
 
 ## Build & run
 1. Open the solution in Visual Studio.
-2. Set configuration to **Release | Win32** (x64).
+2. Set configuration to **Release | x64**.
 3. Build the project.
 4. Launch Ravenfield EA39.
 5. Run the trainer **as Administrator** (needed for process memory access).
