@@ -1,4 +1,5 @@
 #include "mem.h"
+#include <cstring>
 
 void PatchEx(BYTE* dst, BYTE* src, unsigned int size, HANDLE hProcess)
 {

@@ -11,6 +11,14 @@ struct Address {
 
 namespace GameAddresses {
 
+    // ActorManager pointer chain used by the read-only dot ESP.
+    const Address ACTOR_MANAGER = {
+        "Actor Manager",
+        0x01A6D6A0,
+        { 0x120, 0x48, 0x60, 0x178, 0xA80 },
+        "pointer"
+    };
+
     // Player Object + 0x128
     const Address HEALTH = {
         "Health",
@@ -121,4 +129,24 @@ namespace GameAddresses {
         { 0x128, 0x48, 0x60, 0x178, 0x20, 0x2F4 },
         "float"
     };
+}
+
+// These object-relative offsets describe the Mono structures used by the dot ESP.
+namespace GameOffsets {
+    inline constexpr uintptr_t ACTOR_MANAGER_ACTORS = 0x100;
+    inline constexpr uintptr_t ACTOR_MANAGER_PLAYER = 0x110;
+
+    inline constexpr uintptr_t LIST_ITEMS = 0x10;
+    inline constexpr uintptr_t LIST_SIZE = 0x18;
+    inline constexpr uintptr_t MANAGED_ARRAY_FIRST_ELEMENT = 0x20;
+
+    inline constexpr uintptr_t ACTOR_TEAM = 0x18;
+    inline constexpr uintptr_t ACTOR_CONTROLLER = 0x20;
+    inline constexpr uintptr_t ACTOR_HEALTH = 0x128;
+    inline constexpr uintptr_t ACTOR_CACHED_POSITION = 0x2EC;
+
+    inline constexpr uintptr_t CONTROLLER_FP_PARENT = 0x40;
+    inline constexpr uintptr_t CONTROLLER_WORLD_TO_LOCAL = 0x120;
+
+    inline constexpr uintptr_t FP_PARENT_VERTICAL_FOV = 0x100;
 }

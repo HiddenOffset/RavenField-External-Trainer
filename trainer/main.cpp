@@ -5,6 +5,8 @@
 #include <Windows.h>
 #include "process.h"
 #include "addresses.h"
+#include "esp.h"
+#include "overlay.h"
 
 void PrintWelcome()
 {
@@ -25,10 +27,10 @@ void PrintWelcome()
 
 void PrintMenu(bool healthEnabled, bool ammoEnabled, bool ammoReserveEnabled,
                bool gunSpreadEnabled, bool overHeatEnabled, bool ignorePlayerEnabled,
-               bool weaponBobbingEnabled, float speedMultiValue)
+               bool weaponBobbingEnabled, float speedMultiValue, bool espEnabled)
 {
     system("cls"); // Clear console before printing menu
-    std::cout << "============== version 1.2  ===========" << std::endl;
+    std::cout << "============== version 1.3  ===========" << std::endl;
     std::cout << std::endl;
     std::cout << "Features:" << std::endl;
     std::cout << "[NUMPAD 1] Health: " << (healthEnabled ? "ON" : "OFF") << std::endl;
@@ -40,6 +42,7 @@ void PrintMenu(bool healthEnabled, bool ammoEnabled, bool ammoReserveEnabled,
     std::cout << "[NUMPAD 7] Ignore Player: " << (ignorePlayerEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[NUMPAD 8] Disable Weapon Bobbing: " << (weaponBobbingEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[NUMPAD 9] Speed Multiplier: " << speedMultiValue << "x" << std::endl;
+    std::cout << "[F1]       Bot Dot ESP: " << (espEnabled ? "ON" : "OFF") << std::endl;
     std::cout << "[INSERT]   Exit" << std::endl;
     std::cout << std::endl;
     std::cout << "========================================" << std::endl;
@@ -82,6 +85,18 @@ int main()
         return 1;
     }
 
+    // This locates Ravenfield's largest visible top-level window for dynamic overlay alignment.
+    HWND gameWindow = FindMainWindow(procId);
+
+    // This object owns the transparent Win32 overlay but does not create it until ESP is enabled.
+    Overlay overlay;
+
+    // This object owns the read-only Actor enumeration and WorldToScreen logic.
+    EspSystem esp(hProcess);
+
+    // This vector is reused every frame to avoid creating a new dot container inside the main loop.
+    std::vector<Vec2> espDots;
+
     // Resolve all addresses
     uintptr_t healthAddr           = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
     uintptr_t ammoAddr             = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO);
@@ -121,6 +136,7 @@ int main()
     bool overHeatEnabled = false;
     bool ignorePlayerEnabled = false;
     bool weaponBobbingEnabled = false; // Starts off (bobbing is normal)
+    bool espEnabled = false; // F1 enables the read-only enemy dot ESP.
 
     // State tracking for menu redraw
     bool lastHealthState = false;
@@ -130,6 +146,7 @@ int main()
     bool lastOverHeatState = false;
     bool lastIgnorePlayerState = false;
     bool lastWeaponBobbingState = false;
+    bool lastEspState = false;
     float lastSpeedMultiValue = 1.0f;
 
     // Y-axis one-shot press state
@@ -137,17 +154,35 @@ int main()
     // Speed multiplier cycling
     bool lastSpeedPress = false;
     float speedMultiValue = 1.0f;
+    // F1 one-shot press state prevents holding the key from toggling ESP repeatedly.
+    bool lastEspPress = false;
 
     PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled,
               gunSpreadEnabled, overHeatEnabled, ignorePlayerEnabled,
-              weaponBobbingEnabled, speedMultiValue); // Initial menu draw
+              weaponBobbingEnabled, speedMultiValue, espEnabled); // Initial menu draw
 
     // Main loop
     while (true) {
+        // This dispatches any pending messages for the optional transparent overlay without blocking the trainer loop.
+        overlay.PumpMessages();
+
         // INSERT key to exit (0x2D)
         if (GetAsyncKeyState(0x2D) & 0x8000) {
             break;
         }
+
+        // F1 toggles the Bot Dot ESP once per physical key press.
+        bool espPress = (GetAsyncKeyState(VK_F1) & 0x8000) != 0;
+        if (espPress && !lastEspPress) {
+            espEnabled = !espEnabled;
+
+            // Turning ESP off immediately removes and hides every previously drawn marker.
+            if (!espEnabled) {
+                overlay.Clear();
+                overlay.Hide();
+            }
+        }
+        lastEspPress = espPress;
 
         // NUMPAD 1 to toggle health (0x61)
         if (GetAsyncKeyState(0x61) & 0x8000) {
@@ -191,7 +226,7 @@ int main()
             Sleep(200); // Debounce
         }
 
-        // NUMPAD 4 to raise Y-axis by +0.125 (0x64) — one-shot per press
+        // NUMPAD 4 to raise Y-axis by +0.125 (0x64) - one-shot per press
         bool yPress = (GetAsyncKeyState(0x64) & 0x8000) != 0;
         if (yPress && !lastYAxisPress) {
             uintptr_t newYAxisAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::Y_AXIS);
@@ -207,7 +242,7 @@ int main()
         }
         lastYAxisPress = yPress;
 
-        // NUMPAD 5 to toggle no gun spread (0x65) — continuous -1.0f
+        // NUMPAD 5 to toggle no gun spread (0x65) - continuous -1.0f
         if (GetAsyncKeyState(0x65) & 0x8000) {
             gunSpreadEnabled = !gunSpreadEnabled;
 
@@ -221,7 +256,7 @@ int main()
             Sleep(200); // Debounce
         }
 
-        // NUMPAD 6 to toggle no overheat (0x66) — continuous 0.0f
+        // NUMPAD 6 to toggle no overheat (0x66) - continuous 0.0f
         if (GetAsyncKeyState(0x66) & 0x8000) {
             overHeatEnabled = !overHeatEnabled;
 
@@ -235,7 +270,7 @@ int main()
             Sleep(200); // Debounce
         }
 
-        // NUMPAD 7 to toggle ignore player (0x67) — bool 0/1
+        // NUMPAD 7 to toggle ignore player (0x67) - bool 0/1
         if (GetAsyncKeyState(0x67) & 0x8000) {
             ignorePlayerEnabled = !ignorePlayerEnabled;
 
@@ -343,14 +378,55 @@ int main()
         if (newSpeedAddr != 0 && newSpeedAddr != speedMultiAddr) speedMultiAddr = newSpeedAddr;
         WriteProcessMemory(hProcess, (BYTE*)speedMultiAddr, &speedMultiValue, sizeof(speedMultiValue), 0);
 
+        // This block performs only read operations against Ravenfield while the Bot Dot ESP is enabled.
+        if (espEnabled) {
+            // Ravenfield can recreate its top-level HWND, so a dead handle is rediscovered instead of reused.
+            if (gameWindow == nullptr || !IsWindow(gameWindow)) {
+                overlay.Destroy();
+                gameWindow = FindMainWindow(procId);
+            }
+
+            // The transparent overlay is created lazily so the trainer has no extra visible window while ESP is off.
+            if (gameWindow != nullptr && !overlay.IsCreated()) {
+                overlay.Create(gameWindow);
+            }
+
+            // A valid overlay supplies the current Ravenfield client dimensions for the projection math.
+            if (overlay.IsCreated()) {
+                int clientWidth = 0;
+                int clientHeight = 0;
+
+                // UpdateBounds also hides the overlay while Ravenfield is minimized or not the foreground app.
+                if (overlay.UpdateBounds(clientWidth, clientHeight)) {
+                    // The ActorManager chain is re-resolved every ESP frame so map/loading transitions do not reuse stale objects.
+                    uintptr_t actorManager = ResolveAddress(hProcess, moduleBase, GameAddresses::ACTOR_MANAGER);
+
+                    // Valid Actor/camera data is converted into one simple screen-space point per living enemy.
+                    if (actorManager != 0 && esp.CollectEnemyDots(actorManager, clientWidth, clientHeight, espDots)) {
+                        overlay.SetDots(espDots);
+                    } else {
+                        // Invalid transition frames clear old points instead of leaving stale dots on screen.
+                        overlay.Clear();
+                    }
+                } else {
+                    // A hidden/minimized/non-foreground game should not retain any stale render data.
+                    overlay.Clear();
+                }
+            }
+        } else {
+            // Keeping the existing HWND hidden makes the next F1 enable fast while drawing nothing when ESP is off.
+            overlay.Hide();
+        }
+
         // Only redraw menu if state changed
         if (healthEnabled != lastHealthState || ammoEnabled != lastAmmoState || 
             ammoReserveEnabled != lastAmmoReserveState || gunSpreadEnabled != lastGunSpreadState ||
             overHeatEnabled != lastOverHeatState || ignorePlayerEnabled != lastIgnorePlayerState ||
-            weaponBobbingEnabled != lastWeaponBobbingState || speedMultiValue != lastSpeedMultiValue) {
+            weaponBobbingEnabled != lastWeaponBobbingState || speedMultiValue != lastSpeedMultiValue ||
+            espEnabled != lastEspState) {
             PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled,
                       gunSpreadEnabled, overHeatEnabled, ignorePlayerEnabled,
-                      weaponBobbingEnabled, speedMultiValue);
+                      weaponBobbingEnabled, speedMultiValue, espEnabled);
             lastHealthState = healthEnabled;
             lastAmmoState = ammoEnabled;
             lastAmmoReserveState = ammoReserveEnabled;
@@ -359,10 +435,14 @@ int main()
             lastIgnorePlayerState = ignorePlayerEnabled;
             lastWeaponBobbingState = weaponBobbingEnabled;
             lastSpeedMultiValue = speedMultiValue;
+            lastEspState = espEnabled;
         }
 
         Sleep(5);
     }
+
+    // This removes the transparent Win32 overlay before releasing the Ravenfield process handle.
+    overlay.Destroy();
 
     CloseHandle(hProcess);
     system("cls");

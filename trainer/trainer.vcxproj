@@ -20,12 +20,17 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="addresses.h" />
+    <ClInclude Include="esp.h" />
+    <ClInclude Include="math_types.h" />
     <ClInclude Include="mem.h" />
+    <ClInclude Include="overlay.h" />
     <ClInclude Include="process.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="esp.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mem.cpp" />
+    <ClCompile Include="overlay.cpp" />
     <ClCompile Include="process.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

@@ -1,6 +1,60 @@
 #include "process.h"
 #include <iostream>
 
+namespace
+{
+    // This stores the process ID being searched and the best matching top-level window found so far.
+    struct WindowSearchData
+    {
+        DWORD processId = 0;
+        HWND window = nullptr;
+        long long largestClientArea = 0;
+    };
+
+    // EnumWindows calls this once for each top-level desktop window.
+    BOOL CALLBACK FindMainWindowCallback(HWND hwnd, LPARAM lParam)
+    {
+        // This recovers the search state passed by FindMainWindow().
+        WindowSearchData* search = reinterpret_cast<WindowSearchData*>(lParam);
+
+        // Invalid search state should stop enumeration because continuing cannot produce a result.
+        if (search == nullptr)
+            return FALSE;
+
+        // This obtains the process ID that owns the current top-level window.
+        DWORD windowProcessId = 0;
+        GetWindowThreadProcessId(hwnd, &windowProcessId);
+
+        // Windows owned by other processes cannot be Ravenfield's game window.
+        if (windowProcessId != search->processId)
+            return TRUE;
+
+        // Invisible or owned popup windows are skipped in favor of the main visible game surface.
+        if (!IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER) != nullptr)
+            return TRUE;
+
+        // This reads the candidate's client rectangle so tiny helper windows can be ignored.
+        RECT clientRect{};
+        if (!GetClientRect(hwnd, &clientRect))
+            return TRUE;
+
+        // This calculates the visible client area for the current candidate.
+        const long long width = static_cast<long long>(clientRect.right - clientRect.left);
+        const long long height = static_cast<long long>(clientRect.bottom - clientRect.top);
+        const long long area = width * height;
+
+        // The largest visible client area is the most reliable Ravenfield main-window candidate.
+        if (width > 0 && height > 0 && area > search->largestClientArea)
+        {
+            search->largestClientArea = area;
+            search->window = hwnd;
+        }
+
+        // Returning TRUE tells EnumWindows to keep looking for a potentially larger matching window.
+        return TRUE;
+    }
+}
+
 DWORD GetProcessId(const wchar_t* proc)
 {
 	DWORD procID = 0;
@@ -61,4 +115,17 @@ uintptr_t findDMAAddy(HANDLE hProc, uintptr_t ptr, std::vector<unsigned int> off
 		addr += offsets[i];
 	}
 	return addr;
+}
+
+HWND FindMainWindow(DWORD procId)
+{
+    // This initializes a search that considers only windows owned by Ravenfield's process ID.
+    WindowSearchData search{};
+    search.processId = procId;
+
+    // EnumWindows walks every top-level desktop window and lets the callback select the best match.
+    EnumWindows(FindMainWindowCallback, reinterpret_cast<LPARAM>(&search));
+
+    // This returns the largest visible Ravenfield-owned client window, or nullptr if none is ready yet.
+    return search.window;
 }
