@@ -1,4 +1,4 @@
-# ravenfield trainer ea39 (updated 9/24/26)
+# Ravenfield Trainer EA39 (updated 9/24/26)
 
 ## what’s ravenfield?
 ravenfield is a single-player/team-based shooter with bots.
