@@ -153,18 +153,52 @@ bool EspSystem::CollectEnemyDots(uintptr_t actorManager,
     if (!mem::Read(hProcess_, controller + GameOffsets::CONTROLLER_WORLD_TO_LOCAL, worldToLocal))
         return false;
 
-    // This reads the fpParent reference that contains the current vertical FOV value.
+    // This reads the fpParent reference that owns Ravenfield's hip-fire and ADS FOV state.
     uintptr_t fpParent = 0;
     if (!mem::Read(hProcess_, controller + GameOffsets::CONTROLLER_FP_PARENT, fpParent) || fpParent == 0)
         return false;
 
-    // This reads the current dynamic vertical FOV instead of assuming a fixed 70-degree value.
-    float verticalFov = 0.0f;
-    if (!mem::Read(hProcess_, fpParent + GameOffsets::FP_PARENT_VERTICAL_FOV, verticalFov))
+    // This reads how far the current camera has transitioned from hip-fire into ADS.
+    float fovRatio = 0.0f;
+    if (!mem::Read(hProcess_, fpParent + GameOffsets::FP_PARENT_FOV_RATIO, fovRatio))
         return false;
 
-    // This rejects impossible FOV values while Ravenfield camera objects are being created or destroyed.
-    if (!std::isfinite(verticalFov) || verticalFov <= 1.0f || verticalFov >= 179.0f)
+    // This reads the normal hip-fire FOV that Ravenfield uses before aiming down sights.
+    float normalFov = 0.0f;
+    if (!mem::Read(hProcess_, fpParent + GameOffsets::FP_PARENT_NORMAL_FOV, normalFov))
+        return false;
+
+    // This reads the current weapon's fully zoomed ADS FOV, which changes between weapon types.
+    float zoomFov = 0.0f;
+    if (!mem::Read(hProcess_, fpParent + GameOffsets::FP_PARENT_ZOOM_FOV, zoomFov))
+        return false;
+
+    // An invalid ratio or normal FOV usually means the camera object is temporarily unavailable.
+    if (!std::isfinite(fovRatio) || !std::isfinite(normalFov) || normalFov <= 1.0f || normalFov >= 179.0f)
+        return false;
+
+    // This clamps the ADS transition value so temporary overshoot cannot create a broken projection.
+    if (fovRatio < 0.0f)
+        fovRatio = 0.0f;
+    else if (fovRatio > 1.0f)
+        fovRatio = 1.0f;
+
+    // Hip-fire can safely use normalFov even if a weapon does not currently expose a useful zoomFov.
+    float activeFov = normalFov;
+
+    // Once ADS begins, the weapon-specific zoom FOV must be valid before interpolation is attempted.
+    if (fovRatio > 0.0001f)
+    {
+        // This rejects an invalid weapon zoom value instead of feeding bad projection data into WorldToScreen.
+        if (!std::isfinite(zoomFov) || zoomFov <= 1.0f || zoomFov >= 179.0f)
+            return false;
+
+        // This linearly interpolates from hip-fire FOV to the weapon's zoom FOV as ADS progresses.
+        activeFov = normalFov + (zoomFov - normalFov) * fovRatio;
+    }
+
+    // This final check guarantees WorldToScreen receives a sane current FOV.
+    if (!std::isfinite(activeFov) || activeFov <= 1.0f || activeFov >= 179.0f)
         return false;
 
     // This reads ActorManager.actors, which points to the managed List<Actor> object.
@@ -200,7 +234,10 @@ bool EspSystem::CollectEnemyDots(uintptr_t actorManager,
                   << " LocalActor=0x" << localActor << std::dec
                   << " Count=" << actorCount
                   << " LocalTeam=" << localTeam
-                  << " VerticalFov=" << verticalFov << std::endl;
+                  << " FovRatio=" << fovRatio
+                  << " NormalFov=" << normalFov
+                  << " ZoomFov=" << zoomFov
+                  << " ActiveFov=" << activeFov << std::endl;
     }
 
     // This iterates only the valid List<Actor> entries reported by _size.
@@ -255,7 +292,7 @@ bool EspSystem::CollectEnemyDots(uintptr_t actorManager,
         // This transforms and projects the enemy using the one camera matrix and FOV read for this frame.
         const bool onScreen = WorldToScreen(worldPosition,
                                             worldToLocal,
-                                            verticalFov,
+                                            activeFov,
                                             clientWidth,
                                             clientHeight,
                                             screenPosition,

@@ -148,5 +148,12 @@ namespace GameOffsets {
     inline constexpr uintptr_t CONTROLLER_FP_PARENT = 0x40;
     inline constexpr uintptr_t CONTROLLER_WORLD_TO_LOCAL = 0x120;
 
-    inline constexpr uintptr_t FP_PARENT_VERTICAL_FOV = 0x100;
+    // This is the 0.0-to-1.0 interpolation amount used while transitioning into ADS.
+    inline constexpr uintptr_t FP_PARENT_FOV_RATIO = 0x0F4;
+
+    // This is the normal hip-fire vertical field of view.
+    inline constexpr uintptr_t FP_PARENT_NORMAL_FOV = 0x104;
+
+    // This is the current weapon's fully zoomed ADS field of view.
+    inline constexpr uintptr_t FP_PARENT_ZOOM_FOV = 0x108;
 }
