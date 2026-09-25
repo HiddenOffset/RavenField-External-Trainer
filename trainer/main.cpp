@@ -16,9 +16,9 @@ void PrintWelcome()
     SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_INTENSITY);
     std::cout << "Raven";
     
-    // White text for "field Trainer EA32"
+    // White text for "field Trainer EA39"
     SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-    std::cout << "field Trainer EA32, by take1" << std::endl;
+    std::cout << "field Trainer EA39, by hiddenOffset" << std::endl;
     std::cout << std::endl;
     
     Sleep(1000); // 1 seconds
