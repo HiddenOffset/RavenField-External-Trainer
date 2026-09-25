@@ -20,7 +20,7 @@ namespace
     // This value is used to convert degrees into radians.
     constexpr float kPi = 3.14159265358979323846f;
 
-    // This is the fixed Y offset that we already confirmed visually lands on a standing enemy's head.
+    // This is the fixed Y offset that we confirmed visually lands on a standing enemy's head.
     constexpr float kDotVerticalOffset = 1.530000091f;
 }
 
@@ -492,7 +492,7 @@ bool EspSystem::CollectEnemyDots(
         Vec3 espTargetPosition =
             worldPosition;
 
-        // This raises the dot by the fixed standing head-height value that already worked.
+        // This raises the dot by the fixed standing head-height value.
         espTargetPosition.y +=
             kDotVerticalOffset;
 
