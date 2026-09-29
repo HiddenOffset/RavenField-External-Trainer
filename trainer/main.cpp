@@ -1,144 +1,492 @@
-//main.cpp defines the entry point to access RavenField.exe
+// main.cpp defines the entry point to access RavenField.exe.
 
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include <Windows.h>
+
 #include "process.h"
 #include "addresses.h"
 #include "esp.h"
 #include "overlay.h"
 
+namespace
+{
+    // Higher values make the mouse move toward the target more slowly.
+    //
+    // 1.0f would attempt to move the entire screen-space difference immediately.
+    constexpr float kAimSmoothing = 1.0f;
+
+    // Very tiny movements are ignored to reduce shaking once the crosshair reaches the target.
+    constexpr float kAimDeadzone = 1.0f;
+
+    // This checks whether Ravenfield currently owns the foreground window.
+    bool IsRavenfieldForeground(HWND gameWindow)
+    {
+        // An invalid Ravenfield HWND cannot own the foreground.
+        if (gameWindow == nullptr ||
+            !IsWindow(gameWindow))
+        {
+            return false;
+        }
+
+        // This reads the currently focused window.
+        HWND foreground =
+            GetForegroundWindow();
+
+        // No foreground window means we should not send mouse input.
+        if (foreground == nullptr)
+        {
+            return false;
+        }
+
+        // This converts child windows into their top-level root window.
+        HWND foregroundRoot =
+            GetAncestor(
+                foreground,
+                GA_ROOT);
+
+        // If GetAncestor fails, use the original foreground HWND.
+        if (foregroundRoot == nullptr)
+        {
+            foregroundRoot =
+                foreground;
+        }
+
+        // This returns true only while Ravenfield's top-level HWND owns focus.
+        return foregroundRoot ==
+            gameWindow;
+    }
+
+    // This moves the mouse toward one screen-space enemy target.
+    void MoveMouseTowardTarget(
+        const Vec2& target,
+        int clientWidth,
+        int clientHeight)
+    {
+        // Invalid client dimensions cannot produce a meaningful screen center.
+        if (clientWidth <= 0 ||
+            clientHeight <= 0)
+        {
+            return;
+        }
+
+        // This calculates the center of Ravenfield's client area.
+        const float centerX =
+            static_cast<float>(clientWidth) *
+            0.5f;
+
+        const float centerY =
+            static_cast<float>(clientHeight) *
+            0.5f;
+
+        // This calculates how far the enemy is from the crosshair.
+        const float differenceX =
+            target.x -
+            centerX;
+
+        const float differenceY =
+            target.y -
+            centerY;
+
+        // Tiny movements are ignored to prevent unnecessary jitter at the target.
+        if (std::fabs(differenceX) <= kAimDeadzone &&
+            std::fabs(differenceY) <= kAimDeadzone)
+        {
+            return;
+        }
+
+        // This divides the movement to produce a smoother pull toward the target.
+        const float smoothedX =
+            differenceX /
+            kAimSmoothing;
+
+        const float smoothedY =
+            differenceY /
+            kAimSmoothing;
+
+        // SendInput expects relative mouse movement as integer values.
+        const LONG mouseX =
+            static_cast<LONG>(
+                std::lround(
+                    smoothedX));
+
+        const LONG mouseY =
+            static_cast<LONG>(
+                std::lround(
+                    smoothedY));
+
+        // If rounding produced no movement, there is nothing useful to send.
+        if (mouseX == 0 &&
+            mouseY == 0)
+        {
+            return;
+        }
+
+        // This prepares one relative mouse movement event.
+        INPUT input{};
+
+        input.type =
+            INPUT_MOUSE;
+
+        input.mi.dx =
+            mouseX;
+
+        input.mi.dy =
+            mouseY;
+
+        input.mi.dwFlags =
+            MOUSEEVENTF_MOVE;
+
+        // This submits the synthetic mouse movement to Windows.
+        SendInput(
+            1,
+            &input,
+            sizeof(INPUT));
+    }
+}
+
 void PrintWelcome()
 {
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    
-    // Red text for "Raven"
-    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_INTENSITY);
-    std::cout << "Raven";
-    
-    // White text for "field Trainer EA39"
-    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-    std::cout << "field Trainer EA39, by hiddenOffset" << std::endl;
-    std::cout << std::endl;
-    
-    Sleep(1000); // 1 seconds
-    system("cls"); // Clear console
+    HANDLE hConsole =
+        GetStdHandle(
+            STD_OUTPUT_HANDLE);
+
+    // Red text for "Raven".
+    SetConsoleTextAttribute(
+        hConsole,
+        FOREGROUND_RED |
+        FOREGROUND_INTENSITY);
+
+    std::cout
+        << "Raven";
+
+    // White text for "field Trainer EA39".
+    SetConsoleTextAttribute(
+        hConsole,
+        FOREGROUND_RED |
+        FOREGROUND_GREEN |
+        FOREGROUND_BLUE);
+
+    std::cout
+        << "field Trainer EA39, by hiddenOffset"
+        << std::endl;
+
+    std::cout
+        << std::endl;
+
+    // This briefly displays the welcome screen.
+    Sleep(
+        1000);
+
+    // This clears the console before displaying the main trainer menu.
+    system(
+        "cls");
 }
 
-void PrintMenu(bool healthEnabled, bool ammoEnabled, bool ammoReserveEnabled,
-               bool gunSpreadEnabled, bool overHeatEnabled, bool ignorePlayerEnabled,
-               bool weaponBobbingEnabled, float speedMultiValue, bool espEnabled)
+void PrintMenu(
+    bool healthEnabled,
+    bool ammoEnabled,
+    bool ammoReserveEnabled,
+    bool gunSpreadEnabled,
+    bool overHeatEnabled,
+    bool ignorePlayerEnabled,
+    bool weaponBobbingEnabled,
+    float speedMultiValue,
+    bool espEnabled)
 {
-    system("cls"); // Clear console before printing menu
-    std::cout << "============== version 1.3  ===========" << std::endl;
-    std::cout << std::endl;
-    std::cout << "Features:" << std::endl;
-    std::cout << "[NUMPAD 1] Health: " << (healthEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[NUMPAD 2] Ammo: " << (ammoEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[NUMPAD 3] Ammo Reserve: " << (ammoReserveEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[NUMPAD 4] Raise Y-Axis by +0.125" << std::endl;
-    std::cout << "[NUMPAD 5] No Gun Spread: " << (gunSpreadEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[NUMPAD 6] No OverHeat: " << (overHeatEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[NUMPAD 7] Ignore Player: " << (ignorePlayerEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[NUMPAD 8] Disable Weapon Bobbing: " << (weaponBobbingEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[NUMPAD 9] Speed Multiplier: " << speedMultiValue << "x" << std::endl;
-    std::cout << "[F1]       Bot Dot ESP: " << (espEnabled ? "ON" : "OFF") << std::endl;
-    std::cout << "[INSERT]   Exit" << std::endl;
-    std::cout << std::endl;
-    std::cout << "========================================" << std::endl;
+    // This clears the old menu before drawing the newest feature states.
+    system(
+        "cls");
+
+    std::cout
+        << "============== version 1.3  ==========="
+        << std::endl;
+
+    std::cout
+        << std::endl;
+
+    std::cout
+        << "Features:"
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 1] Health: "
+        << (healthEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 2] Ammo: "
+        << (ammoEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 3] Ammo Reserve: "
+        << (ammoReserveEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 4] Raise Y-Axis by +0.125"
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 5] No Gun Spread: "
+        << (gunSpreadEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 6] No OverHeat: "
+        << (overHeatEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 7] Ignore Player: "
+        << (ignorePlayerEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 8] Disable Weapon Bobbing: "
+        << (weaponBobbingEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    std::cout
+        << "[NUMPAD 9] Speed Multiplier: "
+        << speedMultiValue
+        << "x"
+        << std::endl;
+
+    std::cout
+        << "[F1]       Bot Dot ESP: "
+        << (espEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    // The first aim-assist prototype activates only while Left Alt is physically held.
+    std::cout
+        << "[LEFT ALT] Hold Aim Assist"
+        << std::endl;
+
+    std::cout
+        << "[INSERT]   Exit"
+        << std::endl;
+
+    std::cout
+        << std::endl;
+
+    std::cout
+        << "========================================"
+        << std::endl;
 }
 
-uintptr_t ResolveAddress(HANDLE hProcess, uintptr_t moduleBase, const Address& addr)
+uintptr_t ResolveAddress(
+    HANDLE hProcess,
+    uintptr_t moduleBase,
+    const Address& addr)
 {
-    uintptr_t dynamicPtrBaseAddr = moduleBase + addr.baseOffset;
-    return findDMAAddy(hProcess, dynamicPtrBaseAddr, addr.offsets);
+    // This calculates the runtime address of the pointer-chain base.
+    uintptr_t dynamicPtrBaseAddr =
+        moduleBase +
+        addr.baseOffset;
+
+    // This resolves the multi-level pointer chain.
+    return findDMAAddy(
+        hProcess,
+        dynamicPtrBaseAddr,
+        addr.offsets);
 }
 
 int main()
 {
-    // Step 1: Welcome screen
+    // Step 1: Display the trainer welcome screen.
     PrintWelcome();
 
-    // Step 2: Get Process ID
-    DWORD procId = GetProcessId(L"ravenfield.exe");
-    if (procId == 0) {
-        std::cout << "Failed to get process ID. Make sure RavenField.exe is running." << std::endl;
-        Sleep(2000);
+    // Step 2: Find Ravenfield's process ID.
+    DWORD procId =
+        GetProcessId(
+            L"ravenfield.exe");
+
+    if (procId == 0)
+    {
+        std::cout
+            << "Failed to get process ID. Make sure RavenField.exe is running."
+            << std::endl;
+
+        Sleep(
+            2000);
+
         return 1;
     }
 
-    system("cls"); // Clear console before next window
+    // This clears the console before the next startup stage.
+    system(
+        "cls");
 
-    // Get Module Base Address
-    uintptr_t moduleBase = GetModuleBaseAddress(procId, L"UnityPlayer.dll");
-    if (moduleBase == 0) {
-        std::cout << "Failed to get module base address." << std::endl;
-        Sleep(2000);
+    // This finds UnityPlayer.dll inside Ravenfield.
+    uintptr_t moduleBase =
+        GetModuleBaseAddress(
+            procId,
+            L"UnityPlayer.dll");
+
+    if (moduleBase == 0)
+    {
+        std::cout
+            << "Failed to get module base address."
+            << std::endl;
+
+        Sleep(
+            2000);
+
         return 1;
     }
 
-    // Get Process Handle
-    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);
-    if (hProcess == NULL) {
-        std::cout << "Failed to open process." << std::endl;
-        Sleep(2000);
+    // This opens Ravenfield so trainer features can read and write its memory.
+    HANDLE hProcess =
+        OpenProcess(
+            PROCESS_ALL_ACCESS,
+            FALSE,
+            procId);
+
+    if (hProcess == nullptr)
+    {
+        std::cout
+            << "Failed to open process."
+            << std::endl;
+
+        Sleep(
+            2000);
+
         return 1;
     }
 
-    // This locates Ravenfield's largest visible top-level window for dynamic overlay alignment.
-    HWND gameWindow = FindMainWindow(procId);
+    // This locates Ravenfield's largest visible top-level window.
+    HWND gameWindow =
+        FindMainWindow(
+            procId);
 
-    // This object owns the transparent Win32 overlay but does not create it until ESP is enabled.
+    // This object owns the transparent ESP overlay.
     Overlay overlay;
 
-    // This object owns the read-only Actor enumeration and WorldToScreen logic.
-    EspSystem esp(hProcess);
+    // This object owns enemy enumeration, WorldToScreen, and aim-target selection.
+    EspSystem esp(
+        hProcess);
 
-    // This vector is reused every frame to avoid creating a new dot container inside the main loop.
+    // This vector is reused for projected enemy ESP positions.
     std::vector<Vec2> espDots;
 
-    // Resolve all addresses
-    uintptr_t healthAddr           = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
-    uintptr_t ammoAddr             = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO);
-    uintptr_t ammoReserveAddr      = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO_RESERVE);
-    uintptr_t yAxisAddr            = ResolveAddress(hProcess, moduleBase, GameAddresses::Y_AXIS);
-    uintptr_t gunSpreadAddr        = ResolveAddress(hProcess, moduleBase, GameAddresses::GUN_SPREAD);
-    uintptr_t overHeatAddr         = ResolveAddress(hProcess, moduleBase, GameAddresses::NO_OVERHEAT);
-    uintptr_t ignorePlayerAddr     = ResolveAddress(hProcess, moduleBase, GameAddresses::IGNORE_PLAYER);
-    uintptr_t walkBobMultiAddr     = ResolveAddress(hProcess, moduleBase, GameAddresses::WALK_BOB_MULTI);
-    uintptr_t sprintBobMultiAddr   = ResolveAddress(hProcess, moduleBase, GameAddresses::SPRINT_BOB_MULTI);
-    uintptr_t proneBobMultiAddr    = ResolveAddress(hProcess, moduleBase, GameAddresses::PRONE_BOB_MULTI);
-    uintptr_t speedMultiAddr       = ResolveAddress(hProcess, moduleBase, GameAddresses::SPEED_MULTI);
+    // Resolve all existing trainer addresses.
+    uintptr_t healthAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::HEALTH);
 
-    if (healthAddr == 0 || ammoAddr == 0 || ammoReserveAddr == 0 || yAxisAddr == 0 ||
-        gunSpreadAddr == 0 || overHeatAddr == 0 || ignorePlayerAddr == 0 ||
-        walkBobMultiAddr == 0 || sprintBobMultiAddr == 0 || proneBobMultiAddr == 0 || speedMultiAddr == 0) {
-        std::cout << "Failed to resolve one or more addresses." << std::endl;
-        CloseHandle(hProcess);
+    uintptr_t ammoAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::AMMO);
+
+    uintptr_t ammoReserveAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::AMMO_RESERVE);
+
+    uintptr_t yAxisAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::Y_AXIS);
+
+    uintptr_t gunSpreadAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::GUN_SPREAD);
+
+    uintptr_t overHeatAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::NO_OVERHEAT);
+
+    uintptr_t ignorePlayerAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::IGNORE_PLAYER);
+
+    uintptr_t walkBobMultiAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::WALK_BOB_MULTI);
+
+    uintptr_t sprintBobMultiAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::SPRINT_BOB_MULTI);
+
+    uintptr_t proneBobMultiAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::PRONE_BOB_MULTI);
+
+    uintptr_t speedMultiAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::SPEED_MULTI);
+
+    // This makes sure every original trainer feature resolved successfully.
+    if (healthAddr == 0 ||
+        ammoAddr == 0 ||
+        ammoReserveAddr == 0 ||
+        yAxisAddr == 0 ||
+        gunSpreadAddr == 0 ||
+        overHeatAddr == 0 ||
+        ignorePlayerAddr == 0 ||
+        walkBobMultiAddr == 0 ||
+        sprintBobMultiAddr == 0 ||
+        proneBobMultiAddr == 0 ||
+        speedMultiAddr == 0)
+    {
+        std::cout
+            << "Failed to resolve one or more addresses."
+            << std::endl;
+
+        CloseHandle(
+            hProcess);
+
         return 1;
     }
 
-    system("cls"); // Clear console before main menu
+    // This clears the console before displaying the main menu.
+    system(
+        "cls");
 
-    // Stored values for toggling
-    float storedHealth = 0;
-    int   storedAmmo = 0;
-    int   storedAmmoReserve = 0;
+    // These values remember original game values for toggle restoration.
+    float storedHealth = 0.0f;
+    int storedAmmo = 0;
+    int storedAmmoReserve = 0;
     float storedGunSpread = 0.0f;
     float storedOverHeat = 0.0f;
-    bool  storedIgnorePlayer = false;
+    bool storedIgnorePlayer = false;
 
-    // Feature toggles
+    // These are the existing trainer feature states.
     bool healthEnabled = false;
     bool ammoEnabled = false;
     bool ammoReserveEnabled = false;
     bool gunSpreadEnabled = false;
     bool overHeatEnabled = false;
     bool ignorePlayerEnabled = false;
-    bool weaponBobbingEnabled = false; // Starts off (bobbing is normal)
-    bool espEnabled = false; // F1 enables the read-only enemy dot ESP.
+    bool weaponBobbingEnabled = false;
 
-    // State tracking for menu redraw
+    // F1 controls only whether the red ESP dots are displayed.
+    bool espEnabled = false;
+
+    // These remember the previous displayed state so the menu is not constantly redrawn.
     bool lastHealthState = false;
     bool lastAmmoState = false;
     bool lastAmmoReserveState = false;
@@ -149,313 +497,959 @@ int main()
     bool lastEspState = false;
     float lastSpeedMultiValue = 1.0f;
 
-    // Y-axis one-shot press state
+    // This tracks one-shot NUMPAD 4 presses.
     bool lastYAxisPress = false;
-    // Speed multiplier cycling
+
+    // This tracks one-shot NUMPAD 9 presses.
     bool lastSpeedPress = false;
+
+    // This stores the active movement-speed multiplier.
     float speedMultiValue = 1.0f;
-    // F1 one-shot press state prevents holding the key from toggling ESP repeatedly.
+
+    // This tracks one-shot F1 presses.
     bool lastEspPress = false;
 
-    PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled,
-              gunSpreadEnabled, overHeatEnabled, ignorePlayerEnabled,
-              weaponBobbingEnabled, speedMultiValue, espEnabled); // Initial menu draw
+    // This draws the initial trainer menu.
+    PrintMenu(
+        healthEnabled,
+        ammoEnabled,
+        ammoReserveEnabled,
+        gunSpreadEnabled,
+        overHeatEnabled,
+        ignorePlayerEnabled,
+        weaponBobbingEnabled,
+        speedMultiValue,
+        espEnabled);
 
-    // Main loop
-    while (true) {
-        // This dispatches any pending messages for the optional transparent overlay without blocking the trainer loop.
+    // This is the trainer's main update loop.
+    while (true)
+    {
+        // This dispatches pending overlay messages without blocking the trainer.
         overlay.PumpMessages();
 
-        // INSERT key to exit (0x2D)
-        if (GetAsyncKeyState(0x2D) & 0x8000) {
+        // INSERT exits the trainer.
+        if (GetAsyncKeyState(VK_INSERT) &
+            0x8000)
+        {
             break;
         }
 
-        // F1 toggles the Bot Dot ESP once per physical key press.
-        bool espPress = (GetAsyncKeyState(VK_F1) & 0x8000) != 0;
-        if (espPress && !lastEspPress) {
-            espEnabled = !espEnabled;
+        // Left Alt is intentionally hold-to-activate rather than a toggle.
+        const bool aimbotHeld =
+            (GetAsyncKeyState(VK_LMENU) &
+                0x8000) != 0;
 
-            // Turning ESP off immediately removes and hides every previously drawn marker.
-            if (!espEnabled) {
+        // F1 toggles the visual Bot Dot ESP once per physical key press.
+        const bool espPress =
+            (GetAsyncKeyState(VK_F1) &
+                0x8000) != 0;
+
+        if (espPress &&
+            !lastEspPress)
+        {
+            espEnabled =
+                !espEnabled;
+
+            // Turning ESP off immediately removes and hides previous markers.
+            if (!espEnabled)
+            {
                 overlay.Clear();
                 overlay.Hide();
             }
         }
-        lastEspPress = espPress;
 
-        // NUMPAD 1 to toggle health (0x61)
-        if (GetAsyncKeyState(0x61) & 0x8000) {
-            healthEnabled = !healthEnabled;
-            
-            if (healthEnabled) {
-                ReadProcessMemory(hProcess, (BYTE*)healthAddr, &storedHealth, sizeof(storedHealth), 0);
-                float healthValue = 9999.0f;
-                WriteProcessMemory(hProcess, (BYTE*)healthAddr, &healthValue, sizeof(healthValue), 0);
-            } else {
-                WriteProcessMemory(hProcess, (BYTE*)healthAddr, &storedHealth, sizeof(storedHealth), 0);
+        lastEspPress =
+            espPress;
+
+        // NUMPAD 1 toggles health.
+        if (GetAsyncKeyState(VK_NUMPAD1) &
+            0x8000)
+        {
+            healthEnabled =
+                !healthEnabled;
+
+            if (healthEnabled)
+            {
+                ReadProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPCVOID>(
+                        healthAddr),
+                    &storedHealth,
+                    sizeof(storedHealth),
+                    nullptr);
+
+                float healthValue =
+                    9999.0f;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        healthAddr),
+                    &healthValue,
+                    sizeof(healthValue),
+                    nullptr);
             }
-            Sleep(200); // Debounce
-        }
-
-        // NUMPAD 2 to toggle ammo (0x62)
-        if (GetAsyncKeyState(0x62) & 0x8000) {
-            ammoEnabled = !ammoEnabled;
-            
-            if (ammoEnabled) {
-                ReadProcessMemory(hProcess, (BYTE*)ammoAddr, &storedAmmo, sizeof(storedAmmo), 0);
-                int ammoValue = 9999;
-                WriteProcessMemory(hProcess, (BYTE*)ammoAddr, &ammoValue, sizeof(ammoValue), 0);
-            } else {
-                WriteProcessMemory(hProcess, (BYTE*)ammoAddr, &storedAmmo, sizeof(storedAmmo), 0);
-            }
-            Sleep(200); // Debounce
-        }
-
-        // NUMPAD 3 to toggle ammo reserve (0x63)
-        if (GetAsyncKeyState(0x63) & 0x8000) {
-            ammoReserveEnabled = !ammoReserveEnabled;
-            
-            if (ammoReserveEnabled) {
-                ReadProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &storedAmmoReserve, sizeof(storedAmmoReserve), 0);
-                int ammoReserveValue = 9999;
-                WriteProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &ammoReserveValue, sizeof(ammoReserveValue), 0);
-            } else {
-                WriteProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &storedAmmoReserve, sizeof(storedAmmoReserve), 0);
-            }
-            Sleep(200); // Debounce
-        }
-
-        // NUMPAD 4 to raise Y-axis by +0.125 (0x64) - one-shot per press
-        bool yPress = (GetAsyncKeyState(0x64) & 0x8000) != 0;
-        if (yPress && !lastYAxisPress) {
-            uintptr_t newYAxisAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::Y_AXIS);
-            if (newYAxisAddr != 0 && newYAxisAddr != yAxisAddr) {
-                yAxisAddr = newYAxisAddr;
+            else
+            {
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        healthAddr),
+                    &storedHealth,
+                    sizeof(storedHealth),
+                    nullptr);
             }
 
-            float currentY = 0.0f;
-            if (ReadProcessMemory(hProcess, (BYTE*)yAxisAddr, &currentY, sizeof(currentY), 0)) {
-                currentY += 0.125f;
-                WriteProcessMemory(hProcess, (BYTE*)yAxisAddr, &currentY, sizeof(currentY), 0);
+            Sleep(
+                200);
+        }
+
+        // NUMPAD 2 toggles ammunition.
+        if (GetAsyncKeyState(VK_NUMPAD2) &
+            0x8000)
+        {
+            ammoEnabled =
+                !ammoEnabled;
+
+            if (ammoEnabled)
+            {
+                ReadProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPCVOID>(
+                        ammoAddr),
+                    &storedAmmo,
+                    sizeof(storedAmmo),
+                    nullptr);
+
+                int ammoValue =
+                    9999;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        ammoAddr),
+                    &ammoValue,
+                    sizeof(ammoValue),
+                    nullptr);
             }
-        }
-        lastYAxisPress = yPress;
-
-        // NUMPAD 5 to toggle no gun spread (0x65) - continuous -1.0f
-        if (GetAsyncKeyState(0x65) & 0x8000) {
-            gunSpreadEnabled = !gunSpreadEnabled;
-
-            if (gunSpreadEnabled) {
-                ReadProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &storedGunSpread, sizeof(storedGunSpread), 0);
-                float spreadValue = -1.0f;
-                WriteProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &spreadValue, sizeof(spreadValue), 0);
-            } else {
-                WriteProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &storedGunSpread, sizeof(storedGunSpread), 0);
-            }
-            Sleep(200); // Debounce
-        }
-
-        // NUMPAD 6 to toggle no overheat (0x66) - continuous 0.0f
-        if (GetAsyncKeyState(0x66) & 0x8000) {
-            overHeatEnabled = !overHeatEnabled;
-
-            if (overHeatEnabled) {
-                ReadProcessMemory(hProcess, (BYTE*)overHeatAddr, &storedOverHeat, sizeof(storedOverHeat), 0);
-                float overHeatValue = 0.0f;
-                WriteProcessMemory(hProcess, (BYTE*)overHeatAddr, &overHeatValue, sizeof(overHeatValue), 0);
-            } else {
-                WriteProcessMemory(hProcess, (BYTE*)overHeatAddr, &storedOverHeat, sizeof(storedOverHeat), 0);
-            }
-            Sleep(200); // Debounce
-        }
-
-        // NUMPAD 7 to toggle ignore player (0x67) - bool 0/1
-        if (GetAsyncKeyState(0x67) & 0x8000) {
-            ignorePlayerEnabled = !ignorePlayerEnabled;
-
-            ReadProcessMemory(hProcess, (BYTE*)ignorePlayerAddr, &storedIgnorePlayer, sizeof(storedIgnorePlayer), 0);
-            bool value = ignorePlayerEnabled ? true : storedIgnorePlayer;
-            WriteProcessMemory(hProcess, (BYTE*)ignorePlayerAddr, &value, sizeof(value), 0);
-            Sleep(200); // Debounce
-        }
-
-        // NUMPAD 8 to toggle weapon bobbing multipliers (0x68)
-        if (GetAsyncKeyState(0x68) & 0x8000) {
-            weaponBobbingEnabled = !weaponBobbingEnabled;
-
-            if (weaponBobbingEnabled) {
-                float bobValue = 0.0f; // disable bobbing
-                WriteProcessMemory(hProcess, (BYTE*)sprintBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-                WriteProcessMemory(hProcess, (BYTE*)proneBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-                WriteProcessMemory(hProcess, (BYTE*)walkBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-            } else {
-                float bobValue = 1.0f; // Enable (restore to 1.0)
-                WriteProcessMemory(hProcess, (BYTE*)walkBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-                WriteProcessMemory(hProcess, (BYTE*)sprintBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-                WriteProcessMemory(hProcess, (BYTE*)proneBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-            }
-            Sleep(200); // Debounce
-        }
-
-        // NUMPAD 9 to cycle speed multiplier (0x69): 1 -> 2 -> 3 -> 1
-        bool speedPress = (GetAsyncKeyState(0x69) & 0x8000) != 0;
-        if (speedPress && !lastSpeedPress) {
-            uintptr_t newSpeedAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::SPEED_MULTI);
-            if (newSpeedAddr != 0 && newSpeedAddr != speedMultiAddr) {
-                speedMultiAddr = newSpeedAddr;
+            else
+            {
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        ammoAddr),
+                    &storedAmmo,
+                    sizeof(storedAmmo),
+                    nullptr);
             }
 
-            speedMultiValue += 1.0f;
-            if (speedMultiValue > 3.0f) {
-                speedMultiValue = 1.0f;
+            Sleep(
+                200);
+        }
+
+        // NUMPAD 3 toggles reserve ammunition.
+        if (GetAsyncKeyState(VK_NUMPAD3) &
+            0x8000)
+        {
+            ammoReserveEnabled =
+                !ammoReserveEnabled;
+
+            if (ammoReserveEnabled)
+            {
+                ReadProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPCVOID>(
+                        ammoReserveAddr),
+                    &storedAmmoReserve,
+                    sizeof(storedAmmoReserve),
+                    nullptr);
+
+                int ammoReserveValue =
+                    9999;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        ammoReserveAddr),
+                    &ammoReserveValue,
+                    sizeof(ammoReserveValue),
+                    nullptr);
             }
-            WriteProcessMemory(hProcess, (BYTE*)speedMultiAddr, &speedMultiValue, sizeof(speedMultiValue), 0);
-        }
-        lastSpeedPress = speedPress;
+            else
+            {
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        ammoReserveAddr),
+                    &storedAmmoReserve,
+                    sizeof(storedAmmoReserve),
+                    nullptr);
+            }
 
-        // Re-resolve dynamic addresses and enforce values
-        if (healthEnabled) {
-            uintptr_t newHealthAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::HEALTH);
-            if (newHealthAddr != 0 && newHealthAddr != healthAddr) healthAddr = newHealthAddr;
-            float healthValue = 9999.0f;
-            WriteProcessMemory(hProcess, (BYTE*)healthAddr, &healthValue, sizeof(healthValue), 0);
-        }
-
-        if (ammoEnabled) {
-            uintptr_t newAmmoAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO);
-            if (newAmmoAddr != 0 && newAmmoAddr != ammoAddr) ammoAddr = newAmmoAddr;
-            int ammoValue = 9999;
-            WriteProcessMemory(hProcess, (BYTE*)ammoAddr, &ammoValue, sizeof(ammoValue), 0);
+            Sleep(
+                200);
         }
 
-        if (ammoReserveEnabled) {
-            uintptr_t newAmmoReserveAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::AMMO_RESERVE);
-            if (newAmmoReserveAddr != 0 && newAmmoReserveAddr != ammoReserveAddr) ammoReserveAddr = newAmmoReserveAddr;
-            int ammoReserveValue = 9999;
-            WriteProcessMemory(hProcess, (BYTE*)ammoReserveAddr, &ammoReserveValue, sizeof(ammoReserveValue), 0);
+        // NUMPAD 4 raises the Y-axis by +0.125 once per press.
+        const bool yPress =
+            (GetAsyncKeyState(VK_NUMPAD4) &
+                0x8000) != 0;
+
+        if (yPress &&
+            !lastYAxisPress)
+        {
+            uintptr_t newYAxisAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::Y_AXIS);
+
+            if (newYAxisAddr != 0 &&
+                newYAxisAddr != yAxisAddr)
+            {
+                yAxisAddr =
+                    newYAxisAddr;
+            }
+
+            float currentY =
+                0.0f;
+
+            if (ReadProcessMemory(
+                hProcess,
+                reinterpret_cast<LPCVOID>(
+                    yAxisAddr),
+                &currentY,
+                sizeof(currentY),
+                nullptr))
+            {
+                currentY +=
+                    0.125f;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        yAxisAddr),
+                    &currentY,
+                    sizeof(currentY),
+                    nullptr);
+            }
         }
 
-        if (gunSpreadEnabled) {
-            uintptr_t newGunSpreadAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::GUN_SPREAD);
-            if (newGunSpreadAddr != 0 && newGunSpreadAddr != gunSpreadAddr) gunSpreadAddr = newGunSpreadAddr;
-            float spreadValue = -1.0f;
-            WriteProcessMemory(hProcess, (BYTE*)gunSpreadAddr, &spreadValue, sizeof(spreadValue), 0);
+        lastYAxisPress =
+            yPress;
+
+        // NUMPAD 5 toggles no gun spread.
+        if (GetAsyncKeyState(VK_NUMPAD5) &
+            0x8000)
+        {
+            gunSpreadEnabled =
+                !gunSpreadEnabled;
+
+            if (gunSpreadEnabled)
+            {
+                ReadProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPCVOID>(
+                        gunSpreadAddr),
+                    &storedGunSpread,
+                    sizeof(storedGunSpread),
+                    nullptr);
+
+                float spreadValue =
+                    -1.0f;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        gunSpreadAddr),
+                    &spreadValue,
+                    sizeof(spreadValue),
+                    nullptr);
+            }
+            else
+            {
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        gunSpreadAddr),
+                    &storedGunSpread,
+                    sizeof(storedGunSpread),
+                    nullptr);
+            }
+
+            Sleep(
+                200);
         }
 
-        if (overHeatEnabled) {
-            uintptr_t newOverHeatAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::NO_OVERHEAT);
-            if (newOverHeatAddr != 0 && newOverHeatAddr != overHeatAddr) overHeatAddr = newOverHeatAddr;
-            float overHeatValue = 0.0f;
-            WriteProcessMemory(hProcess, (BYTE*)overHeatAddr, &overHeatValue, sizeof(overHeatValue), 0);
+        // NUMPAD 6 toggles no overheat.
+        if (GetAsyncKeyState(VK_NUMPAD6) &
+            0x8000)
+        {
+            overHeatEnabled =
+                !overHeatEnabled;
+
+            if (overHeatEnabled)
+            {
+                ReadProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPCVOID>(
+                        overHeatAddr),
+                    &storedOverHeat,
+                    sizeof(storedOverHeat),
+                    nullptr);
+
+                float overHeatValue =
+                    0.0f;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        overHeatAddr),
+                    &overHeatValue,
+                    sizeof(overHeatValue),
+                    nullptr);
+            }
+            else
+            {
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        overHeatAddr),
+                    &storedOverHeat,
+                    sizeof(storedOverHeat),
+                    nullptr);
+            }
+
+            Sleep(
+                200);
         }
 
-        if (ignorePlayerEnabled) {
-            uintptr_t newIgnoreAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::IGNORE_PLAYER);
-            if (newIgnoreAddr != 0 && newIgnoreAddr != ignorePlayerAddr) ignorePlayerAddr = newIgnoreAddr;
-            bool value = true;
-            WriteProcessMemory(hProcess, (BYTE*)ignorePlayerAddr, &value, sizeof(value), 0);
+        // NUMPAD 7 toggles Ignore Player.
+        if (GetAsyncKeyState(VK_NUMPAD7) &
+            0x8000)
+        {
+            ignorePlayerEnabled =
+                !ignorePlayerEnabled;
+
+            ReadProcessMemory(
+                hProcess,
+                reinterpret_cast<LPCVOID>(
+                    ignorePlayerAddr),
+                &storedIgnorePlayer,
+                sizeof(storedIgnorePlayer),
+                nullptr);
+
+            const bool value =
+                ignorePlayerEnabled
+                ? true
+                : storedIgnorePlayer;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    ignorePlayerAddr),
+                &value,
+                sizeof(value),
+                nullptr);
+
+            Sleep(
+                200);
         }
 
-        if (weaponBobbingEnabled) {
-            uintptr_t newWalkAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::WALK_BOB_MULTI);
-            if (newWalkAddr != 0 && newWalkAddr != walkBobMultiAddr) walkBobMultiAddr = newWalkAddr;
-            
-            uintptr_t newSprintAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::SPRINT_BOB_MULTI);
-            if (newSprintAddr != 0 && newSprintAddr != sprintBobMultiAddr) sprintBobMultiAddr = newSprintAddr;
-            
-            uintptr_t newProneAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::PRONE_BOB_MULTI);
-            if (newProneAddr != 0 && newProneAddr != proneBobMultiAddr) proneBobMultiAddr = newProneAddr;
+        // NUMPAD 8 toggles the weapon-bobbing multipliers.
+        if (GetAsyncKeyState(VK_NUMPAD8) &
+            0x8000)
+        {
+            weaponBobbingEnabled =
+                !weaponBobbingEnabled;
 
-            float bobValue = 0.0f;
-            WriteProcessMemory(hProcess, (BYTE*)walkBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-            WriteProcessMemory(hProcess, (BYTE*)sprintBobMultiAddr, &bobValue, sizeof(bobValue), 0);
-            WriteProcessMemory(hProcess, (BYTE*)proneBobMultiAddr, &bobValue, sizeof(bobValue), 0);
+            if (weaponBobbingEnabled)
+            {
+                float bobValue =
+                    0.0f;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        sprintBobMultiAddr),
+                    &bobValue,
+                    sizeof(bobValue),
+                    nullptr);
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        proneBobMultiAddr),
+                    &bobValue,
+                    sizeof(bobValue),
+                    nullptr);
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        walkBobMultiAddr),
+                    &bobValue,
+                    sizeof(bobValue),
+                    nullptr);
+            }
+            else
+            {
+                float bobValue =
+                    1.0f;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        walkBobMultiAddr),
+                    &bobValue,
+                    sizeof(bobValue),
+                    nullptr);
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        sprintBobMultiAddr),
+                    &bobValue,
+                    sizeof(bobValue),
+                    nullptr);
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        proneBobMultiAddr),
+                    &bobValue,
+                    sizeof(bobValue),
+                    nullptr);
+            }
+
+            Sleep(
+                200);
         }
 
-        // Always enforce selected speed multiplier value
-        uintptr_t newSpeedAddr = ResolveAddress(hProcess, moduleBase, GameAddresses::SPEED_MULTI);
-        if (newSpeedAddr != 0 && newSpeedAddr != speedMultiAddr) speedMultiAddr = newSpeedAddr;
-        WriteProcessMemory(hProcess, (BYTE*)speedMultiAddr, &speedMultiValue, sizeof(speedMultiValue), 0);
+        // NUMPAD 9 cycles the speed multiplier from 1x to 2x to 3x and back to 1x.
+        const bool speedPress =
+            (GetAsyncKeyState(VK_NUMPAD9) &
+                0x8000) != 0;
 
-        // This block performs only read operations against Ravenfield while the Bot Dot ESP is enabled.
-        if (espEnabled) {
-            // Ravenfield can recreate its top-level HWND, so a dead handle is rediscovered instead of reused.
-            if (gameWindow == nullptr || !IsWindow(gameWindow)) {
+        if (speedPress &&
+            !lastSpeedPress)
+        {
+            uintptr_t newSpeedAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::SPEED_MULTI);
+
+            if (newSpeedAddr != 0 &&
+                newSpeedAddr != speedMultiAddr)
+            {
+                speedMultiAddr =
+                    newSpeedAddr;
+            }
+
+            speedMultiValue +=
+                1.0f;
+
+            if (speedMultiValue > 3.0f)
+            {
+                speedMultiValue =
+                    1.0f;
+            }
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    speedMultiAddr),
+                &speedMultiValue,
+                sizeof(speedMultiValue),
+                nullptr);
+        }
+
+        lastSpeedPress =
+            speedPress;
+
+        // This continuously re-resolves and enforces infinite health while enabled.
+        if (healthEnabled)
+        {
+            uintptr_t newHealthAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::HEALTH);
+
+            if (newHealthAddr != 0 &&
+                newHealthAddr != healthAddr)
+            {
+                healthAddr =
+                    newHealthAddr;
+            }
+
+            float healthValue =
+                9999.0f;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    healthAddr),
+                &healthValue,
+                sizeof(healthValue),
+                nullptr);
+        }
+
+        // This continuously re-resolves and enforces ammunition while enabled.
+        if (ammoEnabled)
+        {
+            uintptr_t newAmmoAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::AMMO);
+
+            if (newAmmoAddr != 0 &&
+                newAmmoAddr != ammoAddr)
+            {
+                ammoAddr =
+                    newAmmoAddr;
+            }
+
+            int ammoValue =
+                9999;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    ammoAddr),
+                &ammoValue,
+                sizeof(ammoValue),
+                nullptr);
+        }
+
+        // This continuously re-resolves and enforces reserve ammunition while enabled.
+        if (ammoReserveEnabled)
+        {
+            uintptr_t newAmmoReserveAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::AMMO_RESERVE);
+
+            if (newAmmoReserveAddr != 0 &&
+                newAmmoReserveAddr != ammoReserveAddr)
+            {
+                ammoReserveAddr =
+                    newAmmoReserveAddr;
+            }
+
+            int ammoReserveValue =
+                9999;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    ammoReserveAddr),
+                &ammoReserveValue,
+                sizeof(ammoReserveValue),
+                nullptr);
+        }
+
+        // This continuously enforces no spread while enabled.
+        if (gunSpreadEnabled)
+        {
+            uintptr_t newGunSpreadAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::GUN_SPREAD);
+
+            if (newGunSpreadAddr != 0 &&
+                newGunSpreadAddr != gunSpreadAddr)
+            {
+                gunSpreadAddr =
+                    newGunSpreadAddr;
+            }
+
+            float spreadValue =
+                -1.0f;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    gunSpreadAddr),
+                &spreadValue,
+                sizeof(spreadValue),
+                nullptr);
+        }
+
+        // This continuously enforces zero overheat while enabled.
+        if (overHeatEnabled)
+        {
+            uintptr_t newOverHeatAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::NO_OVERHEAT);
+
+            if (newOverHeatAddr != 0 &&
+                newOverHeatAddr != overHeatAddr)
+            {
+                overHeatAddr =
+                    newOverHeatAddr;
+            }
+
+            float overHeatValue =
+                0.0f;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    overHeatAddr),
+                &overHeatValue,
+                sizeof(overHeatValue),
+                nullptr);
+        }
+
+        // This continuously keeps the player ignored while enabled.
+        if (ignorePlayerEnabled)
+        {
+            uintptr_t newIgnoreAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::IGNORE_PLAYER);
+
+            if (newIgnoreAddr != 0 &&
+                newIgnoreAddr != ignorePlayerAddr)
+            {
+                ignorePlayerAddr =
+                    newIgnoreAddr;
+            }
+
+            bool value =
+                true;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    ignorePlayerAddr),
+                &value,
+                sizeof(value),
+                nullptr);
+        }
+
+        // This continuously keeps all three weapon-bobbing multipliers at zero.
+        if (weaponBobbingEnabled)
+        {
+            uintptr_t newWalkAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::WALK_BOB_MULTI);
+
+            if (newWalkAddr != 0 &&
+                newWalkAddr != walkBobMultiAddr)
+            {
+                walkBobMultiAddr =
+                    newWalkAddr;
+            }
+
+            uintptr_t newSprintAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::SPRINT_BOB_MULTI);
+
+            if (newSprintAddr != 0 &&
+                newSprintAddr != sprintBobMultiAddr)
+            {
+                sprintBobMultiAddr =
+                    newSprintAddr;
+            }
+
+            uintptr_t newProneAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::PRONE_BOB_MULTI);
+
+            if (newProneAddr != 0 &&
+                newProneAddr != proneBobMultiAddr)
+            {
+                proneBobMultiAddr =
+                    newProneAddr;
+            }
+
+            float bobValue =
+                0.0f;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    walkBobMultiAddr),
+                &bobValue,
+                sizeof(bobValue),
+                nullptr);
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    sprintBobMultiAddr),
+                &bobValue,
+                sizeof(bobValue),
+                nullptr);
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    proneBobMultiAddr),
+                &bobValue,
+                sizeof(bobValue),
+                nullptr);
+        }
+
+        // The selected speed multiplier is continuously enforced.
+        uintptr_t newSpeedAddr =
+            ResolveAddress(
+                hProcess,
+                moduleBase,
+                GameAddresses::SPEED_MULTI);
+
+        if (newSpeedAddr != 0 &&
+            newSpeedAddr != speedMultiAddr)
+        {
+            speedMultiAddr =
+                newSpeedAddr;
+        }
+
+        WriteProcessMemory(
+            hProcess,
+            reinterpret_cast<LPVOID>(
+                speedMultiAddr),
+            &speedMultiValue,
+            sizeof(speedMultiValue),
+            nullptr);
+
+        // Enemy projection data is needed whenever either ESP or aim assist is active.
+        if (espEnabled ||
+            aimbotHeld)
+        {
+            // Ravenfield can recreate its top-level window, so a dead handle is rediscovered.
+            if (gameWindow == nullptr ||
+                !IsWindow(gameWindow))
+            {
                 overlay.Destroy();
-                gameWindow = FindMainWindow(procId);
+
+                gameWindow =
+                    FindMainWindow(
+                        procId);
             }
 
-            // The transparent overlay is created lazily so the trainer has no extra visible window while ESP is off.
-            if (gameWindow != nullptr && !overlay.IsCreated()) {
-                overlay.Create(gameWindow);
+            // These dimensions are needed by WorldToScreen and target selection.
+            int clientWidth = 0;
+            int clientHeight = 0;
+
+            // This tracks whether we successfully obtained Ravenfield's current client size.
+            bool haveClientDimensions =
+                false;
+
+            // When visual ESP is enabled, the overlay already provides accurate live dimensions.
+            if (espEnabled)
+            {
+                // This lazily creates the visual overlay.
+                if (gameWindow != nullptr &&
+                    !overlay.IsCreated())
+                {
+                    overlay.Create(
+                        gameWindow);
+                }
+
+                // UpdateBounds obtains Ravenfield's current client dimensions.
+                if (overlay.IsCreated())
+                {
+                    haveClientDimensions =
+                        overlay.UpdateBounds(
+                            clientWidth,
+                            clientHeight);
+                }
+            }
+            else
+            {
+                // Aim assist can operate without displaying the visual ESP.
+                //
+                // In that case we obtain the client dimensions directly from Ravenfield.
+                if (gameWindow != nullptr &&
+                    IsWindow(gameWindow) &&
+                    IsRavenfieldForeground(gameWindow))
+                {
+                    RECT clientRect{};
+
+                    if (GetClientRect(
+                        gameWindow,
+                        &clientRect))
+                    {
+                        clientWidth =
+                            clientRect.right -
+                            clientRect.left;
+
+                        clientHeight =
+                            clientRect.bottom -
+                            clientRect.top;
+
+                        haveClientDimensions =
+                            clientWidth > 0 &&
+                            clientHeight > 0;
+                    }
+                }
             }
 
-            // A valid overlay supplies the current Ravenfield client dimensions for the projection math.
-            if (overlay.IsCreated()) {
-                int clientWidth = 0;
-                int clientHeight = 0;
+            // Projection only runs when the game has usable client dimensions.
+            if (haveClientDimensions)
+            {
+                // ActorManager is re-resolved every frame just like the existing ESP implementation.
+                uintptr_t actorManager =
+                    ResolveAddress(
+                        hProcess,
+                        moduleBase,
+                        GameAddresses::ACTOR_MANAGER);
 
-                // UpdateBounds also hides the overlay while Ravenfield is minimized or not the foreground app.
-                if (overlay.UpdateBounds(clientWidth, clientHeight)) {
-                    // The ActorManager chain is re-resolved every ESP frame so map/loading transitions do not reuse stale objects.
-                    uintptr_t actorManager = ResolveAddress(hProcess, moduleBase, GameAddresses::ACTOR_MANAGER);
+                // This runs the existing enemy filtering and WorldToScreen calculations.
+                const bool collectionSucceeded =
+                    actorManager != 0 &&
+                    esp.CollectEnemyDots(
+                        actorManager,
+                        clientWidth,
+                        clientHeight,
+                        espDots);
 
-                    // Valid Actor/camera data is converted into one simple screen-space point per living enemy.
-                    if (actorManager != 0 && esp.CollectEnemyDots(actorManager, clientWidth, clientHeight, espDots)) {
-                        overlay.SetDots(espDots);
-                    } else {
-                        // Invalid transition frames clear old points instead of leaving stale dots on screen.
+                if (collectionSucceeded)
+                {
+                    // F1 controls whether those projected points are actually drawn.
+                    if (espEnabled)
+                    {
+                        overlay.SetDots(
+                            espDots);
+                    }
+
+                    // Left Alt activates mouse movement only while Ravenfield is foreground.
+                    if (aimbotHeld &&
+                        IsRavenfieldForeground(gameWindow))
+                    {
+                        // This receives the enemy closest to the crosshair inside the aim FOV.
+                        Vec2 aimTarget{};
+
+                        // No mouse input is sent when no eligible enemy exists.
+                        if (esp.GetClosestAimTarget(
+                            aimTarget))
+                        {
+                            MoveMouseTowardTarget(
+                                aimTarget,
+                                clientWidth,
+                                clientHeight);
+                        }
+                    }
+                }
+                else
+                {
+                    // A failed Actor/camera frame removes stale ESP dots.
+                    if (espEnabled)
+                    {
                         overlay.Clear();
                     }
-                } else {
-                    // A hidden/minimized/non-foreground game should not retain any stale render data.
+                }
+            }
+            else
+            {
+                // Invalid window dimensions should not leave stale visual dots.
+                if (espEnabled)
+                {
                     overlay.Clear();
                 }
             }
-        } else {
-            // Keeping the existing HWND hidden makes the next F1 enable fast while drawing nothing when ESP is off.
+        }
+        else
+        {
+            // When neither feature needs projection data, the visual overlay can remain hidden.
             overlay.Hide();
         }
 
-        // Only redraw menu if state changed
-        if (healthEnabled != lastHealthState || ammoEnabled != lastAmmoState || 
-            ammoReserveEnabled != lastAmmoReserveState || gunSpreadEnabled != lastGunSpreadState ||
-            overHeatEnabled != lastOverHeatState || ignorePlayerEnabled != lastIgnorePlayerState ||
-            weaponBobbingEnabled != lastWeaponBobbingState || speedMultiValue != lastSpeedMultiValue ||
-            espEnabled != lastEspState) {
-            PrintMenu(healthEnabled, ammoEnabled, ammoReserveEnabled,
-                      gunSpreadEnabled, overHeatEnabled, ignorePlayerEnabled,
-                      weaponBobbingEnabled, speedMultiValue, espEnabled);
-            lastHealthState = healthEnabled;
-            lastAmmoState = ammoEnabled;
-            lastAmmoReserveState = ammoReserveEnabled;
-            lastGunSpreadState = gunSpreadEnabled;
-            lastOverHeatState = overHeatEnabled;
-            lastIgnorePlayerState = ignorePlayerEnabled;
-            lastWeaponBobbingState = weaponBobbingEnabled;
-            lastSpeedMultiValue = speedMultiValue;
-            lastEspState = espEnabled;
+        // The menu is redrawn only when an existing toggle changes.
+        if (healthEnabled != lastHealthState ||
+            ammoEnabled != lastAmmoState ||
+            ammoReserveEnabled != lastAmmoReserveState ||
+            gunSpreadEnabled != lastGunSpreadState ||
+            overHeatEnabled != lastOverHeatState ||
+            ignorePlayerEnabled != lastIgnorePlayerState ||
+            weaponBobbingEnabled != lastWeaponBobbingState ||
+            speedMultiValue != lastSpeedMultiValue ||
+            espEnabled != lastEspState)
+        {
+            PrintMenu(
+                healthEnabled,
+                ammoEnabled,
+                ammoReserveEnabled,
+                gunSpreadEnabled,
+                overHeatEnabled,
+                ignorePlayerEnabled,
+                weaponBobbingEnabled,
+                speedMultiValue,
+                espEnabled);
+
+            lastHealthState =
+                healthEnabled;
+
+            lastAmmoState =
+                ammoEnabled;
+
+            lastAmmoReserveState =
+                ammoReserveEnabled;
+
+            lastGunSpreadState =
+                gunSpreadEnabled;
+
+            lastOverHeatState =
+                overHeatEnabled;
+
+            lastIgnorePlayerState =
+                ignorePlayerEnabled;
+
+            lastWeaponBobbingState =
+                weaponBobbingEnabled;
+
+            lastSpeedMultiValue =
+                speedMultiValue;
+
+            lastEspState =
+                espEnabled;
         }
 
-        Sleep(5);
+        // A short sleep prevents the trainer loop from consuming an entire CPU core.
+        Sleep(
+            5);
     }
 
-    // This removes the transparent Win32 overlay before releasing the Ravenfield process handle.
+    // This removes the transparent Win32 overlay before releasing Ravenfield.
     overlay.Destroy();
 
-    CloseHandle(hProcess);
-    system("cls");
-    std::cout << "Exiting Ravenfield Trainer..." << std::endl;
+    // This closes the process handle opened during startup.
+    CloseHandle(
+        hProcess);
+
+    // This clears the trainer UI before the final message.
+    system(
+        "cls");
+
+    std::cout
+        << "Exiting Ravenfield Trainer..."
+        << std::endl;
+
     return 0;
 }
 
-//new features in next update:
+// New features in next update:
 /*
-* - improved speed hack precision
-* - better UI/UX for menu
-* - additional toggles as needed
-* - configurable hotkeys
-* - enhanced stability and performance
-* - thorough testing and validation
-*/
+ * - improved speed hack precision
+ * - better UI/UX for menu
+ * - additional toggles as needed
+ * - configurable hotkeys
+ * - enhanced stability and performance
+ * - thorough testing and validation
+ */

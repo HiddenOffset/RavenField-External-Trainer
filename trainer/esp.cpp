@@ -22,12 +22,33 @@ namespace
 
     // This is the fixed Y offset that we confirmed visually lands on a standing enemy's head.
     constexpr float kDotVerticalOffset = 1.530000091f;
+
+    // Only enemies inside this many pixels from the crosshair are eligible for aim assist.
+    //
+    // Lower this value for a smaller targeting area.
+    // Raise this value for a larger targeting area.
+    constexpr float kAimbotFovRadius = 150.0f;
 }
 
 EspSystem::EspSystem(HANDLE hProcess)
     : hProcess_(hProcess)
 {
     // The Ravenfield process handle is supplied by main.cpp.
+}
+
+bool EspSystem::GetClosestAimTarget(Vec2& outTarget) const
+{
+    // No target is returned when the most recent Actor scan found nothing inside the aim FOV.
+    if (!hasClosestAimTarget_)
+    {
+        return false;
+    }
+
+    // This copies the stored screen-space position to the caller.
+    outTarget =
+        closestAimTarget_;
+
+    return true;
 }
 
 Vec3 EspSystem::TransformPoint(
@@ -72,7 +93,8 @@ bool EspSystem::WorldToScreen(
     Vec3* cameraPosition)
 {
     // Invalid client dimensions cannot be used for projection.
-    if (clientWidth <= 0 || clientHeight <= 0)
+    if (clientWidth <= 0 ||
+        clientHeight <= 0)
     {
         return false;
     }
@@ -94,12 +116,14 @@ bool EspSystem::WorldToScreen(
     // This optionally returns the camera-space position for debugging.
     if (cameraPosition != nullptr)
     {
-        *cameraPosition = camera;
+        *cameraPosition =
+            camera;
     }
 
     // This converts camera-space Z into usable forward depth.
     const float depth =
-        camera.z * kCameraForwardSign;
+        camera.z *
+        kCameraForwardSign;
 
     // This rejects enemies behind the camera or extremely close to the camera plane.
     if (!std::isfinite(depth) ||
@@ -180,6 +204,28 @@ bool EspSystem::CollectEnemyDots(
 {
     // This clears last frame's dots.
     outDots.clear();
+
+    // Every new scan begins without an aim target.
+    hasClosestAimTarget_ =
+        false;
+
+    // This calculates the screen-space center where Ravenfield's crosshair normally sits.
+    const float centerX =
+        static_cast<float>(clientWidth) *
+        0.5f;
+
+    const float centerY =
+        static_cast<float>(clientHeight) *
+        0.5f;
+
+    // Squared distance avoids performing an unnecessary square root for every enemy.
+    const float aimFovRadiusSquared =
+        kAimbotFovRadius *
+        kAimbotFovRadius;
+
+    // The best target begins at the maximum allowed distance from the crosshair.
+    float closestDistanceSquared =
+        aimFovRadiusSquared;
 
     // This prevents processing if ActorManager is unavailable.
     if (actorManager == 0)
@@ -379,7 +425,8 @@ bool EspSystem::CollectEnemyDots(
         (now - lastDebugPrint_ >= 1000);
 
     // This keeps debug mode from printing every enemy at once.
-    bool printedEnemyDebug = false;
+    bool printedEnemyDebug =
+        false;
 
     // This prints shared frame information when debug mode is enabled.
     if (shouldPrintDebug)
@@ -407,7 +454,9 @@ bool EspSystem::CollectEnemyDots(
     }
 
     // This loops over every Actor in the managed list.
-    for (int i = 0; i < actorCount; ++i)
+    for (int i = 0;
+        i < actorCount;
+        ++i)
     {
         // This calculates the address containing the current Actor pointer.
         const uintptr_t actorPointerAddress =
@@ -428,7 +477,7 @@ bool EspSystem::CollectEnemyDots(
             continue;
         }
 
-        // This prevents the ESP from drawing the local player.
+        // This prevents the ESP from drawing or targeting the local player.
         if (actor == localActor)
         {
             continue;
@@ -445,7 +494,7 @@ bool EspSystem::CollectEnemyDots(
             continue;
         }
 
-        // This removes teammates from the ESP.
+        // This removes teammates from ESP and aim targeting.
         if (actorTeam == localTeam)
         {
             continue;
@@ -492,7 +541,7 @@ bool EspSystem::CollectEnemyDots(
         Vec3 espTargetPosition =
             worldPosition;
 
-        // This raises the dot by the fixed standing head-height value.
+        // This raises the target point to the standing head-height value.
         espTargetPosition.y +=
             kDotVerticalOffset;
 
@@ -551,10 +600,13 @@ bool EspSystem::CollectEnemyDots(
                 << screenPosition.y
                 << ")"
                 << " OnScreen="
-                << (onScreen ? "true" : "false")
+                << (onScreen
+                    ? "true"
+                    : "false")
                 << std::endl;
 
-            printedEnemyDebug = true;
+            printedEnemyDebug =
+                true;
         }
 
         // This skips enemies that could not be projected onto the visible screen.
@@ -566,12 +618,42 @@ bool EspSystem::CollectEnemyDots(
         // This sends the final dot position to the overlay.
         outDots.push_back(
             screenPosition);
+
+        // This calculates the horizontal distance from the crosshair to this enemy.
+        const float deltaX =
+            screenPosition.x -
+            centerX;
+
+        // This calculates the vertical distance from the crosshair to this enemy.
+        const float deltaY =
+            screenPosition.y -
+            centerY;
+
+        // This calculates the squared screen-space distance to the crosshair.
+        const float distanceSquared =
+            deltaX * deltaX +
+            deltaY * deltaY;
+
+        // This enemy becomes the aim target only if it is inside the FOV
+        // and closer to the crosshair than every previously examined enemy.
+        if (distanceSquared <= closestDistanceSquared)
+        {
+            closestDistanceSquared =
+                distanceSquared;
+
+            closestAimTarget_ =
+                screenPosition;
+
+            hasClosestAimTarget_ =
+                true;
+        }
     }
 
     // This updates the debug timer.
     if (shouldPrintDebug)
     {
-        lastDebugPrint_ = now;
+        lastDebugPrint_ =
+            now;
     }
 
     // The Actor list was processed successfully.
