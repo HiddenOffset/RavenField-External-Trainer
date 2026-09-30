@@ -211,41 +211,41 @@ void PrintMenu(
         << std::endl;
 
     std::cout
-        << "[NUMPAD 1] Health: "
+        << "[F1]       Health: "
         << (healthEnabled ? "ON" : "OFF")
         << std::endl;
 
     std::cout
-        << "[NUMPAD 2] Ammo: "
+        << "[F2]       Ammo: "
         << (ammoEnabled ? "ON" : "OFF")
         << std::endl;
 
     std::cout
-        << "[NUMPAD 3] Ammo Reserve: "
+        << "[F3]       Ammo Reserve: "
         << (ammoReserveEnabled ? "ON" : "OFF")
         << std::endl;
 
     std::cout
-        << "[NUMPAD 4] Raise Y-Axis by +0.125"
+        << "[F4]       Raise Y-Axis by +0.125"
         << std::endl;
 
     std::cout
-        << "[NUMPAD 5] No Gun Spread: "
+        << "[F5]       No Gun Spread: "
         << (gunSpreadEnabled ? "ON" : "OFF")
         << std::endl;
 
     std::cout
-        << "[NUMPAD 6] No OverHeat: "
+        << "[F6]       No OverHeat: "
         << (overHeatEnabled ? "ON" : "OFF")
         << std::endl;
 
     std::cout
-        << "[NUMPAD 7] Ignore Player: "
+        << "[F7]       Ignore Player: "
         << (ignorePlayerEnabled ? "ON" : "OFF")
         << std::endl;
 
     std::cout
-        << "[NUMPAD 8] Disable Weapon Bobbing: "
+        << "[F8]       Disable Weapon Bobbing: "
         << (weaponBobbingEnabled ? "ON" : "OFF")
         << std::endl;
 
@@ -256,7 +256,7 @@ void PrintMenu(
         << std::endl;
 
     std::cout
-        << "[F1]       Bot Dot ESP: "
+        << "[F9]       Bot Dot ESP: "
         << (espEnabled ? "ON" : "OFF")
         << std::endl;
 
@@ -483,7 +483,7 @@ int main()
     bool ignorePlayerEnabled = false;
     bool weaponBobbingEnabled = false;
 
-    // F1 controls only whether the red ESP dots are displayed.
+    // F9 controls only whether the red ESP dots are displayed.
     bool espEnabled = false;
 
     // These remember the previous displayed state so the menu is not constantly redrawn.
@@ -497,7 +497,7 @@ int main()
     bool lastEspState = false;
     float lastSpeedMultiValue = 1.0f;
 
-    // This tracks one-shot NUMPAD 4 presses.
+    // This tracks one-shot F4 presses.
     bool lastYAxisPress = false;
 
     // This tracks one-shot NUMPAD 9 presses.
@@ -506,7 +506,7 @@ int main()
     // This stores the active movement-speed multiplier.
     float speedMultiValue = 1.0f;
 
-    // This tracks one-shot F1 presses.
+    // This tracks one-shot F9 presses.
     bool lastEspPress = false;
 
     // This draws the initial trainer menu.
@@ -539,9 +539,9 @@ int main()
             (GetAsyncKeyState(VK_LMENU) &
                 0x8000) != 0;
 
-        // F1 toggles the visual Bot Dot ESP once per physical key press.
+        // F9 toggles the visual Bot Dot ESP once per physical key press.
         const bool espPress =
-            (GetAsyncKeyState(VK_F1) &
+            (GetAsyncKeyState(VK_F9) &
                 0x8000) != 0;
 
         if (espPress &&
@@ -561,8 +561,8 @@ int main()
         lastEspPress =
             espPress;
 
-        // NUMPAD 1 toggles health.
-        if (GetAsyncKeyState(VK_NUMPAD1) &
+        // F1 toggles health.
+        if (GetAsyncKeyState(VK_F1) &
             0x8000)
         {
             healthEnabled =
@@ -604,8 +604,8 @@ int main()
                 200);
         }
 
-        // NUMPAD 2 toggles ammunition.
-        if (GetAsyncKeyState(VK_NUMPAD2) &
+        // F2 toggles ammunition.
+        if (GetAsyncKeyState(VK_F2) &
             0x8000)
         {
             ammoEnabled =
@@ -647,8 +647,8 @@ int main()
                 200);
         }
 
-        // NUMPAD 3 toggles reserve ammunition.
-        if (GetAsyncKeyState(VK_NUMPAD3) &
+        // F3 toggles reserve ammunition.
+        if (GetAsyncKeyState(VK_F3) &
             0x8000)
         {
             ammoReserveEnabled =
@@ -690,9 +690,9 @@ int main()
                 200);
         }
 
-        // NUMPAD 4 raises the Y-axis by +0.125 once per press.
+        // F4 raises the Y-axis by +0.125 once per press.
         const bool yPress =
-            (GetAsyncKeyState(VK_NUMPAD4) &
+            (GetAsyncKeyState(VK_F4) &
                 0x8000) != 0;
 
         if (yPress &&
@@ -738,8 +738,8 @@ int main()
         lastYAxisPress =
             yPress;
 
-        // NUMPAD 5 toggles no gun spread.
-        if (GetAsyncKeyState(VK_NUMPAD5) &
+        // F5 toggles no gun spread.
+        if (GetAsyncKeyState(VK_F5) &
             0x8000)
         {
             gunSpreadEnabled =
@@ -781,8 +781,8 @@ int main()
                 200);
         }
 
-        // NUMPAD 6 toggles no overheat.
-        if (GetAsyncKeyState(VK_NUMPAD6) &
+        // F6 toggles no overheat.
+        if (GetAsyncKeyState(VK_F6) &
             0x8000)
         {
             overHeatEnabled =
@@ -824,8 +824,8 @@ int main()
                 200);
         }
 
-        // NUMPAD 7 toggles Ignore Player.
-        if (GetAsyncKeyState(VK_NUMPAD7) &
+        // F7 toggles Ignore Player.
+        if (GetAsyncKeyState(VK_F7) &
             0x8000)
         {
             ignorePlayerEnabled =
@@ -856,8 +856,8 @@ int main()
                 200);
         }
 
-        // NUMPAD 8 toggles the weapon-bobbing multipliers.
-        if (GetAsyncKeyState(VK_NUMPAD8) &
+        // F8 toggles the weapon-bobbing multipliers.
+        if (GetAsyncKeyState(VK_F8) &
             0x8000)
         {
             weaponBobbingEnabled =
@@ -1322,7 +1322,7 @@ int main()
 
                 if (collectionSucceeded)
                 {
-                    // F1 controls whether those projected points are actually drawn.
+                    // F9 controls whether those projected points are actually drawn.
                     if (espEnabled)
                     {
                         overlay.SetDots(
