@@ -1,8 +1,10 @@
 // main.cpp defines the entry point to access RavenField.exe.
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 #include <Windows.h>
 
 #include "process.h"
@@ -188,7 +190,7 @@ void PrintMenu(
     bool healthEnabled,
     bool ammoEnabled,
     bool ammoReserveEnabled,
-    bool gunSpreadEnabled,
+    bool noRecoilEnabled,
     bool overHeatEnabled,
     bool ignorePlayerEnabled,
     bool weaponBobbingEnabled,
@@ -230,8 +232,8 @@ void PrintMenu(
         << std::endl;
 
     std::cout
-        << "[NUMPAD 5] No Gun Spread: "
-        << (gunSpreadEnabled ? "ON" : "OFF")
+        << "[NUMPAD 5] No Recoil: "
+        << (noRecoilEnabled ? "ON" : "OFF")
         << std::endl;
 
     std::cout
@@ -260,7 +262,7 @@ void PrintMenu(
         << (espEnabled ? "ON" : "OFF")
         << std::endl;
 
-    // The first aim-assist prototype activates only while Left Alt is physically held.
+    // Aim assist activates only while Left Alt is physically held.
     std::cout
         << "[LEFT ALT] Hold Aim Assist"
         << std::endl;
@@ -292,6 +294,332 @@ uintptr_t ResolveAddress(
         hProcess,
         dynamicPtrBaseAddr,
         addr.offsets);
+}
+
+namespace
+{
+    // These are the Weapon.Configuration float fields that together control
+    // recoil, spread, snap, and rattle.
+    constexpr std::array<uintptr_t, 18> kNoRecoilConfigurationOffsets = {
+        GameOffsets::RECOIL_KICKBACK,
+        GameOffsets::RECOIL_RANDOM_KICK,
+        GameOffsets::RECOIL_SPREAD,
+        GameOffsets::RECOIL_FOLLOWUP_SPREAD_GAIN,
+        GameOffsets::RECOIL_FOLLOWUP_MAX_SPREAD_HIP,
+        GameOffsets::RECOIL_FOLLOWUP_MAX_SPREAD_AIM,
+        GameOffsets::RECOIL_FOLLOWUP_SPREAD_STAY_TIME,
+        GameOffsets::RECOIL_FOLLOWUP_SPREAD_DISSIPATE_TIME,
+        GameOffsets::RECOIL_SNAP_MAGNITUDE,
+        GameOffsets::RECOIL_SNAP_DURATION,
+        GameOffsets::RECOIL_SNAP_FREQUENCY,
+        GameOffsets::RECOIL_RATTLE_MAGNITUDE,
+        GameOffsets::RECOIL_RATTLE_DURATION,
+        GameOffsets::RECOIL_RATTLE_FREQUENCY,
+        GameOffsets::RECOIL_KICKBACK_PRONE_MULTIPLIER,
+        GameOffsets::RECOIL_SPREAD_PRONE_MULTIPLIER,
+        GameOffsets::RECOIL_FOLLOWUP_SPREAD_PRONE_MULTIPLIER,
+        GameOffsets::RECOIL_SNAP_PRONE_MULTIPLIER
+    };
+
+    // This stores an untouched copy of every recoil-related float
+    // from one configuration object.
+    struct RecoilConfigurationBackup
+    {
+        std::array<float, kNoRecoilConfigurationOffsets.size()> values{};
+    };
+
+    // This safely reads one pointer-sized value from Ravenfield.
+    bool ReadPointerValue(
+        HANDLE hProcess,
+        uintptr_t address,
+        uintptr_t& outValue)
+    {
+        outValue = 0;
+
+        SIZE_T bytesRead = 0;
+
+        const BOOL success =
+            ReadProcessMemory(
+                hProcess,
+                reinterpret_cast<LPCVOID>(
+                    address),
+                &outValue,
+                sizeof(outValue),
+                &bytesRead);
+
+        return success &&
+            bytesRead == sizeof(outValue);
+    }
+
+    // This safely reads one float from Ravenfield.
+    bool ReadFloatValue(
+        HANDLE hProcess,
+        uintptr_t address,
+        float& outValue)
+    {
+        outValue = 0.0f;
+
+        SIZE_T bytesRead = 0;
+
+        const BOOL success =
+            ReadProcessMemory(
+                hProcess,
+                reinterpret_cast<LPCVOID>(
+                    address),
+                &outValue,
+                sizeof(outValue),
+                &bytesRead);
+
+        return success &&
+            bytesRead == sizeof(outValue);
+    }
+
+    // This safely writes one float to Ravenfield.
+    bool WriteFloatValue(
+        HANDLE hProcess,
+        uintptr_t address,
+        float value)
+    {
+        SIZE_T bytesWritten = 0;
+
+        const BOOL success =
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    address),
+                &value,
+                sizeof(value),
+                &bytesWritten);
+
+        return success &&
+            bytesWritten == sizeof(value);
+    }
+
+    // This captures the complete original recoil block before
+    // that configuration is modified.
+    bool ReadRecoilConfiguration(
+        HANDLE hProcess,
+        uintptr_t configuration,
+        RecoilConfigurationBackup& outBackup)
+    {
+        if (configuration == 0)
+        {
+            return false;
+        }
+
+        for (size_t i = 0;
+            i < kNoRecoilConfigurationOffsets.size();
+            ++i)
+        {
+            if (!ReadFloatValue(
+                hProcess,
+                configuration +
+                kNoRecoilConfigurationOffsets[i],
+                outBackup.values[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // This writes zero to every recoil/spread field in one configuration object.
+    void ZeroRecoilConfiguration(
+        HANDLE hProcess,
+        uintptr_t configuration)
+    {
+        constexpr float zero =
+            0.0f;
+
+        for (const uintptr_t offset :
+        kNoRecoilConfigurationOffsets)
+        {
+            WriteFloatValue(
+                hProcess,
+                configuration + offset,
+                zero);
+        }
+    }
+
+    // This restores one configuration object to the exact values captured
+    // before No Recoil touched it.
+    void RestoreRecoilConfiguration(
+        HANDLE hProcess,
+        uintptr_t configuration,
+        const RecoilConfigurationBackup& backup)
+    {
+        for (size_t i = 0;
+            i < kNoRecoilConfigurationOffsets.size();
+            ++i)
+        {
+            WriteFloatValue(
+                hProcess,
+                configuration +
+                kNoRecoilConfigurationOffsets[i],
+                backup.values[i]);
+        }
+    }
+
+    // This resolves the Weapon object currently equipped by the local player.
+    bool GetCurrentWeapon(
+        HANDLE hProcess,
+        uintptr_t moduleBase,
+        uintptr_t& outWeapon)
+    {
+        outWeapon = 0;
+
+        // ResolveAddress returns the address of Actor.activeWeapon,
+        // so one final pointer read obtains the actual Weapon object.
+        const uintptr_t activeWeaponField =
+            ResolveAddress(
+                hProcess,
+                moduleBase,
+                GameAddresses::ACTIVE_WEAPON_FIELD);
+
+        if (activeWeaponField == 0)
+        {
+            return false;
+        }
+
+        return ReadPointerValue(
+            hProcess,
+            activeWeaponField,
+            outWeapon) &&
+            outWeapon != 0;
+    }
+
+    // This applies No Recoil to the currently equipped weapon while
+    // preserving original values per Weapon and per Configuration object.
+    void ApplyNoRecoilToCurrentWeapon(
+        HANDLE hProcess,
+        uintptr_t moduleBase,
+        std::unordered_map<uintptr_t, float>& runtimeSpreadBackups,
+        std::unordered_map<uintptr_t, RecoilConfigurationBackup>&
+        configurationBackups)
+    {
+        // This resolves the currently held Weapon object.
+        uintptr_t weapon = 0;
+
+        if (!GetCurrentWeapon(
+            hProcess,
+            moduleBase,
+            weapon))
+        {
+            return;
+        }
+
+        // Weapon + 0x40 points to the Configuration object containing
+        // the recoil values discovered in Cheat Engine.
+        uintptr_t configuration = 0;
+
+        if (!ReadPointerValue(
+            hProcess,
+            weapon +
+            GameOffsets::WEAPON_CONFIGURATION,
+            configuration) ||
+            configuration == 0)
+        {
+            return;
+        }
+
+        // The old No Gun Spread feature used Weapon + 0x1A0.
+        //
+        // Save this once for each distinct Weapon object encountered.
+        if (runtimeSpreadBackups.find(
+            weapon) ==
+            runtimeSpreadBackups.end())
+        {
+            float originalRuntimeSpread =
+                0.0f;
+
+            if (!ReadFloatValue(
+                hProcess,
+                weapon +
+                GameOffsets::WEAPON_RUNTIME_SPREAD,
+                originalRuntimeSpread))
+            {
+                return;
+            }
+
+            runtimeSpreadBackups.emplace(
+                weapon,
+                originalRuntimeSpread);
+        }
+
+        // Configuration objects are also backed up only once.
+        //
+        // This matters if two Weapon objects happen to reference the
+        // same Configuration object: we must never back up an already-zeroed copy.
+        if (configurationBackups.find(
+            configuration) ==
+            configurationBackups.end())
+        {
+            RecoilConfigurationBackup backup{};
+
+            if (!ReadRecoilConfiguration(
+                hProcess,
+                configuration,
+                backup))
+            {
+                return;
+            }
+
+            configurationBackups.emplace(
+                configuration,
+                backup);
+        }
+
+        // This keeps the old known-working No Gun Spread behavior.
+        constexpr float noRuntimeSpread =
+            -1.0f;
+
+        WriteFloatValue(
+            hProcess,
+            weapon +
+            GameOffsets::WEAPON_RUNTIME_SPREAD,
+            noRuntimeSpread);
+
+        // This removes configuration-level kickback, random kick,
+        // spread, snap, rattle, and prone recoil multipliers.
+        ZeroRecoilConfiguration(
+            hProcess,
+            configuration);
+    }
+
+    // This restores every Weapon and Configuration touched while
+    // No Recoil was enabled.
+    void RestoreNoRecoilBackups(
+        HANDLE hProcess,
+        std::unordered_map<uintptr_t, float>& runtimeSpreadBackups,
+        std::unordered_map<uintptr_t, RecoilConfigurationBackup>&
+        configurationBackups)
+    {
+        // Restore each Configuration object exactly once.
+        for (const auto& entry :
+            configurationBackups)
+        {
+            RestoreRecoilConfiguration(
+                hProcess,
+                entry.first,
+                entry.second);
+        }
+
+        // Restore the original runtime spread for every Weapon encountered.
+        for (const auto& entry :
+            runtimeSpreadBackups)
+        {
+            WriteFloatValue(
+                hProcess,
+                entry.first +
+                GameOffsets::WEAPON_RUNTIME_SPREAD,
+                entry.second);
+        }
+
+        // A future enable cycle should capture fresh game values.
+        configurationBackups.clear();
+        runtimeSpreadBackups.clear();
+    }
 }
 
 int main()
@@ -397,12 +725,6 @@ int main()
             moduleBase,
             GameAddresses::Y_AXIS);
 
-    uintptr_t gunSpreadAddr =
-        ResolveAddress(
-            hProcess,
-            moduleBase,
-            GameAddresses::GUN_SPREAD);
-
     uintptr_t overHeatAddr =
         ResolveAddress(
             hProcess,
@@ -444,7 +766,6 @@ int main()
         ammoAddr == 0 ||
         ammoReserveAddr == 0 ||
         yAxisAddr == 0 ||
-        gunSpreadAddr == 0 ||
         overHeatAddr == 0 ||
         ignorePlayerAddr == 0 ||
         walkBobMultiAddr == 0 ||
@@ -470,7 +791,6 @@ int main()
     float storedHealth = 0.0f;
     int storedAmmo = 0;
     int storedAmmoReserve = 0;
-    float storedGunSpread = 0.0f;
     float storedOverHeat = 0.0f;
     bool storedIgnorePlayer = false;
 
@@ -478,7 +798,7 @@ int main()
     bool healthEnabled = false;
     bool ammoEnabled = false;
     bool ammoReserveEnabled = false;
-    bool gunSpreadEnabled = false;
+    bool noRecoilEnabled = false;
     bool overHeatEnabled = false;
     bool ignorePlayerEnabled = false;
     bool weaponBobbingEnabled = false;
@@ -486,11 +806,19 @@ int main()
     // F1 controls only whether the red ESP dots are displayed.
     bool espEnabled = false;
 
-    // These remember the previous displayed state so the menu is not constantly redrawn.
+    // These maps preserve the original recoil values for every object
+    // touched while No Recoil is enabled.
+    std::unordered_map<uintptr_t, float>
+        noRecoilRuntimeSpreadBackups;
+
+    std::unordered_map<uintptr_t, RecoilConfigurationBackup>
+        noRecoilConfigurationBackups;
+
+    // These remember previous displayed states so the menu is not constantly redrawn.
     bool lastHealthState = false;
     bool lastAmmoState = false;
     bool lastAmmoReserveState = false;
-    bool lastGunSpreadState = false;
+    bool lastNoRecoilState = false;
     bool lastOverHeatState = false;
     bool lastIgnorePlayerState = false;
     bool lastWeaponBobbingState = false;
@@ -499,6 +827,9 @@ int main()
 
     // This tracks one-shot NUMPAD 4 presses.
     bool lastYAxisPress = false;
+
+    // This tracks one-shot NUMPAD 5 presses so No Recoil toggles only once per physical press.
+    bool lastNoRecoilPress = false;
 
     // This tracks one-shot NUMPAD 9 presses.
     bool lastSpeedPress = false;
@@ -514,7 +845,7 @@ int main()
         healthEnabled,
         ammoEnabled,
         ammoReserveEnabled,
-        gunSpreadEnabled,
+        noRecoilEnabled,
         overHeatEnabled,
         ignorePlayerEnabled,
         weaponBobbingEnabled,
@@ -738,48 +1069,30 @@ int main()
         lastYAxisPress =
             yPress;
 
-        // NUMPAD 5 toggles no gun spread.
-        if (GetAsyncKeyState(VK_NUMPAD5) &
-            0x8000)
+        // NUMPAD 5 toggles the combined No Recoil feature once per physical key press.
+        const bool noRecoilPress =
+            (GetAsyncKeyState(VK_NUMPAD5) &
+                0x8000) != 0;
+
+        if (noRecoilPress &&
+            !lastNoRecoilPress)
         {
-            gunSpreadEnabled =
-                !gunSpreadEnabled;
+            noRecoilEnabled =
+                !noRecoilEnabled;
 
-            if (gunSpreadEnabled)
+            // Turning No Recoil off restores every weapon/configuration
+            // touched during this enable cycle.
+            if (!noRecoilEnabled)
             {
-                ReadProcessMemory(
+                RestoreNoRecoilBackups(
                     hProcess,
-                    reinterpret_cast<LPCVOID>(
-                        gunSpreadAddr),
-                    &storedGunSpread,
-                    sizeof(storedGunSpread),
-                    nullptr);
-
-                float spreadValue =
-                    -1.0f;
-
-                WriteProcessMemory(
-                    hProcess,
-                    reinterpret_cast<LPVOID>(
-                        gunSpreadAddr),
-                    &spreadValue,
-                    sizeof(spreadValue),
-                    nullptr);
+                    noRecoilRuntimeSpreadBackups,
+                    noRecoilConfigurationBackups);
             }
-            else
-            {
-                WriteProcessMemory(
-                    hProcess,
-                    reinterpret_cast<LPVOID>(
-                        gunSpreadAddr),
-                    &storedGunSpread,
-                    sizeof(storedGunSpread),
-                    nullptr);
-            }
-
-            Sleep(
-                200);
         }
+
+        lastNoRecoilPress =
+            noRecoilPress;
 
         // NUMPAD 6 toggles no overheat.
         if (GetAsyncKeyState(VK_NUMPAD6) &
@@ -1052,32 +1365,15 @@ int main()
                 nullptr);
         }
 
-        // This continuously enforces no spread while enabled.
-        if (gunSpreadEnabled)
+        // This continuously applies No Recoil to whichever weapon
+        // is currently equipped.
+        if (noRecoilEnabled)
         {
-            uintptr_t newGunSpreadAddr =
-                ResolveAddress(
-                    hProcess,
-                    moduleBase,
-                    GameAddresses::GUN_SPREAD);
-
-            if (newGunSpreadAddr != 0 &&
-                newGunSpreadAddr != gunSpreadAddr)
-            {
-                gunSpreadAddr =
-                    newGunSpreadAddr;
-            }
-
-            float spreadValue =
-                -1.0f;
-
-            WriteProcessMemory(
+            ApplyNoRecoilToCurrentWeapon(
                 hProcess,
-                reinterpret_cast<LPVOID>(
-                    gunSpreadAddr),
-                &spreadValue,
-                sizeof(spreadValue),
-                nullptr);
+                moduleBase,
+                noRecoilRuntimeSpreadBackups,
+                noRecoilConfigurationBackups);
         }
 
         // This continuously enforces zero overheat while enabled.
@@ -1278,7 +1574,8 @@ int main()
                 // In that case we obtain the client dimensions directly from Ravenfield.
                 if (gameWindow != nullptr &&
                     IsWindow(gameWindow) &&
-                    IsRavenfieldForeground(gameWindow))
+                    IsRavenfieldForeground(
+                        gameWindow))
                 {
                     RECT clientRect{};
 
@@ -1304,7 +1601,8 @@ int main()
             // Projection only runs when the game has usable client dimensions.
             if (haveClientDimensions)
             {
-                // ActorManager is re-resolved every frame just like the existing ESP implementation.
+                // ActorManager is re-resolved every frame just like
+                // the existing ESP implementation.
                 uintptr_t actorManager =
                     ResolveAddress(
                         hProcess,
@@ -1331,7 +1629,8 @@ int main()
 
                     // Left Alt activates mouse movement only while Ravenfield is foreground.
                     if (aimbotHeld &&
-                        IsRavenfieldForeground(gameWindow))
+                        IsRavenfieldForeground(
+                            gameWindow))
                     {
                         // This receives the enemy closest to the crosshair inside the aim FOV.
                         Vec2 aimTarget{};
@@ -1375,7 +1674,7 @@ int main()
         if (healthEnabled != lastHealthState ||
             ammoEnabled != lastAmmoState ||
             ammoReserveEnabled != lastAmmoReserveState ||
-            gunSpreadEnabled != lastGunSpreadState ||
+            noRecoilEnabled != lastNoRecoilState ||
             overHeatEnabled != lastOverHeatState ||
             ignorePlayerEnabled != lastIgnorePlayerState ||
             weaponBobbingEnabled != lastWeaponBobbingState ||
@@ -1386,7 +1685,7 @@ int main()
                 healthEnabled,
                 ammoEnabled,
                 ammoReserveEnabled,
-                gunSpreadEnabled,
+                noRecoilEnabled,
                 overHeatEnabled,
                 ignorePlayerEnabled,
                 weaponBobbingEnabled,
@@ -1402,8 +1701,8 @@ int main()
             lastAmmoReserveState =
                 ammoReserveEnabled;
 
-            lastGunSpreadState =
-                gunSpreadEnabled;
+            lastNoRecoilState =
+                noRecoilEnabled;
 
             lastOverHeatState =
                 overHeatEnabled;
@@ -1425,6 +1724,13 @@ int main()
         Sleep(
             5);
     }
+
+    // Restore any weapon values that are still modified if the trainer exits
+    // while No Recoil is enabled.
+    RestoreNoRecoilBackups(
+        hProcess,
+        noRecoilRuntimeSpreadBackups,
+        noRecoilConfigurationBackups);
 
     // This removes the transparent Win32 overlay before releasing Ravenfield.
     overlay.Destroy();

@@ -45,6 +45,17 @@ namespace GameAddresses
         "int"
     };
 
+    // This resolves the address of Actor.activeWeapon at Player Object + 0xA0.
+    //
+    // ResolveAddress returns the address of this pointer field, so main.cpp
+    // performs one final pointer read to obtain the current Weapon object.
+    const Address ACTIVE_WEAPON_FIELD = {
+        "Active Weapon Field",
+        0x01A6D6A0,
+        { 0x128, 0x48, 0x60, 0x178, 0x20, 0xA0 },
+        "pointer"
+    };
+
     // Separate chain that remains independent of the Player Object chain.
     const Address Y_AXIS = {
         "Y-Axis",
@@ -53,7 +64,10 @@ namespace GameAddresses
         "float"
     };
 
-    // Player Object + 0xA0 -> Weapon Object + 0x1A0.
+    // Legacy direct runtime-spread address.
+    //
+    // No Recoil now accesses this same Weapon + 0x1A0 field through
+    // the current Weapon object so each weapon can be restored separately.
     const Address GUN_SPREAD = {
         "Gun Spread",
         0x01A6D6A0,
@@ -178,4 +192,47 @@ namespace GameOffsets
 
     // fpParent + 0x108 stores the current weapon's fully zoomed ADS FOV.
     inline constexpr uintptr_t FP_PARENT_ZOOM_FOV = 0x108;
+
+    // Weapon + 0x40 points to the Weapon.Configuration object.
+    inline constexpr uintptr_t WEAPON_CONFIGURATION = 0x40;
+
+    // Weapon + 0x1A0 is the runtime spread field used by the old No Gun Spread feature.
+    inline constexpr uintptr_t WEAPON_RUNTIME_SPREAD = 0x1A0;
+
+    // The following fields are relative to Weapon.Configuration.
+    inline constexpr uintptr_t RECOIL_KICKBACK = 0xC0;
+
+    inline constexpr uintptr_t RECOIL_RANDOM_KICK = 0xC4;
+
+    inline constexpr uintptr_t RECOIL_SPREAD = 0xC8;
+
+    inline constexpr uintptr_t RECOIL_FOLLOWUP_SPREAD_GAIN = 0xCC;
+
+    inline constexpr uintptr_t RECOIL_FOLLOWUP_MAX_SPREAD_HIP = 0xD0;
+
+    inline constexpr uintptr_t RECOIL_FOLLOWUP_MAX_SPREAD_AIM = 0xD4;
+
+    inline constexpr uintptr_t RECOIL_FOLLOWUP_SPREAD_STAY_TIME = 0xD8;
+
+    inline constexpr uintptr_t RECOIL_FOLLOWUP_SPREAD_DISSIPATE_TIME = 0xDC;
+
+    inline constexpr uintptr_t RECOIL_SNAP_MAGNITUDE = 0xE0;
+
+    inline constexpr uintptr_t RECOIL_SNAP_DURATION = 0xE4;
+
+    inline constexpr uintptr_t RECOIL_SNAP_FREQUENCY = 0xE8;
+
+    inline constexpr uintptr_t RECOIL_RATTLE_MAGNITUDE = 0xEC;
+
+    inline constexpr uintptr_t RECOIL_RATTLE_DURATION = 0xF0;
+
+    inline constexpr uintptr_t RECOIL_RATTLE_FREQUENCY = 0xF4;
+
+    inline constexpr uintptr_t RECOIL_KICKBACK_PRONE_MULTIPLIER = 0xF8;
+
+    inline constexpr uintptr_t RECOIL_SPREAD_PRONE_MULTIPLIER = 0xFC;
+
+    inline constexpr uintptr_t RECOIL_FOLLOWUP_SPREAD_PRONE_MULTIPLIER = 0x100;
+
+    inline constexpr uintptr_t RECOIL_SNAP_PRONE_MULTIPLIER = 0x104;
 }
