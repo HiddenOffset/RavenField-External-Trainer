@@ -195,7 +195,8 @@ void PrintMenu(
     bool ignorePlayerEnabled,
     bool weaponBobbingEnabled,
     float speedMultiValue,
-    bool espEnabled)
+    bool espEnabled,
+    bool balanceEnabled)
 {
     // This clears the old menu before drawing the newest feature states.
     system(
@@ -260,6 +261,12 @@ void PrintMenu(
     std::cout
         << "[F1]       Bot Dot ESP: "
         << (espEnabled ? "ON" : "OFF")
+        << std::endl;
+
+    // F2 controls the player's balance and maximum balance.
+    std::cout
+        << "[F2]       Infinite Balance: "
+        << (balanceEnabled ? "ON" : "OFF")
         << std::endl;
 
     // Aim assist activates only while Left Alt is physically held.
@@ -707,6 +714,18 @@ int main()
             moduleBase,
             GameAddresses::HEALTH);
 
+    uintptr_t balanceAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::BALANCE);
+
+    uintptr_t maxBalanceAddr =
+        ResolveAddress(
+            hProcess,
+            moduleBase,
+            GameAddresses::MAX_BALANCE);
+
     uintptr_t ammoAddr =
         ResolveAddress(
             hProcess,
@@ -763,6 +782,8 @@ int main()
 
     // This makes sure every original trainer feature resolved successfully.
     if (healthAddr == 0 ||
+        balanceAddr == 0 ||
+        maxBalanceAddr == 0 ||
         ammoAddr == 0 ||
         ammoReserveAddr == 0 ||
         yAxisAddr == 0 ||
@@ -789,6 +810,8 @@ int main()
 
     // These values remember original game values for toggle restoration.
     float storedHealth = 0.0f;
+    float storedBalance = 0.0f;
+    float storedMaxBalance = 0.0f;
     int storedAmmo = 0;
     int storedAmmoReserve = 0;
     float storedOverHeat = 0.0f;
@@ -796,6 +819,7 @@ int main()
 
     // These are the existing trainer feature states.
     bool healthEnabled = false;
+    bool balanceEnabled = false;
     bool ammoEnabled = false;
     bool ammoReserveEnabled = false;
     bool noRecoilEnabled = false;
@@ -816,6 +840,7 @@ int main()
 
     // These remember previous displayed states so the menu is not constantly redrawn.
     bool lastHealthState = false;
+    bool lastBalanceState = false;
     bool lastAmmoState = false;
     bool lastAmmoReserveState = false;
     bool lastNoRecoilState = false;
@@ -834,11 +859,14 @@ int main()
     // This tracks one-shot NUMPAD 9 presses.
     bool lastSpeedPress = false;
 
-    // This stores the active movement-speed multiplier.
-    float speedMultiValue = 1.0f;
-
     // This tracks one-shot F1 presses.
     bool lastEspPress = false;
+
+    // This tracks one-shot F2 presses.
+    bool lastBalancePress = false;
+
+    // This stores the active movement-speed multiplier.
+    float speedMultiValue = 1.0f;
 
     // This draws the initial trainer menu.
     PrintMenu(
@@ -850,7 +878,8 @@ int main()
         ignorePlayerEnabled,
         weaponBobbingEnabled,
         speedMultiValue,
-        espEnabled);
+        espEnabled,
+        balanceEnabled);
 
     // This is the trainer's main update loop.
     while (true)
@@ -891,6 +920,105 @@ int main()
 
         lastEspPress =
             espPress;
+
+        // F2 toggles Infinite Balance once per physical key press.
+        const bool balancePress =
+            (GetAsyncKeyState(VK_F2) &
+                0x8000) != 0;
+
+        if (balancePress &&
+            !lastBalancePress)
+        {
+            balanceEnabled =
+                !balanceEnabled;
+
+            if (balanceEnabled)
+            {
+                // Re-resolve both fields before saving their current values.
+                uintptr_t newBalanceAddr =
+                    ResolveAddress(
+                        hProcess,
+                        moduleBase,
+                        GameAddresses::BALANCE);
+
+                uintptr_t newMaxBalanceAddr =
+                    ResolveAddress(
+                        hProcess,
+                        moduleBase,
+                        GameAddresses::MAX_BALANCE);
+
+                if (newBalanceAddr != 0)
+                {
+                    balanceAddr =
+                        newBalanceAddr;
+                }
+
+                if (newMaxBalanceAddr != 0)
+                {
+                    maxBalanceAddr =
+                        newMaxBalanceAddr;
+                }
+
+                // Save the normal game values so they can be restored later.
+                ReadProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPCVOID>(
+                        balanceAddr),
+                    &storedBalance,
+                    sizeof(storedBalance),
+                    nullptr);
+
+                ReadProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPCVOID>(
+                        maxBalanceAddr),
+                    &storedMaxBalance,
+                    sizeof(storedMaxBalance),
+                    nullptr);
+
+                // Both values are immediately raised to the same very large value.
+                float balanceValue =
+                    9999.0f;
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        balanceAddr),
+                    &balanceValue,
+                    sizeof(balanceValue),
+                    nullptr);
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        maxBalanceAddr),
+                    &balanceValue,
+                    sizeof(balanceValue),
+                    nullptr);
+            }
+            else
+            {
+                // Turning the feature off restores the values captured when enabled.
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        balanceAddr),
+                    &storedBalance,
+                    sizeof(storedBalance),
+                    nullptr);
+
+                WriteProcessMemory(
+                    hProcess,
+                    reinterpret_cast<LPVOID>(
+                        maxBalanceAddr),
+                    &storedMaxBalance,
+                    sizeof(storedMaxBalance),
+                    nullptr);
+            }
+        }
+
+        lastBalancePress =
+            balancePress;
 
         // NUMPAD 1 toggles health.
         if (GetAsyncKeyState(VK_NUMPAD1) &
@@ -1309,6 +1437,55 @@ int main()
                 nullptr);
         }
 
+        // This continuously re-resolves and enforces both balance values.
+        if (balanceEnabled)
+        {
+            uintptr_t newBalanceAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::BALANCE);
+
+            if (newBalanceAddr != 0 &&
+                newBalanceAddr != balanceAddr)
+            {
+                balanceAddr =
+                    newBalanceAddr;
+            }
+
+            uintptr_t newMaxBalanceAddr =
+                ResolveAddress(
+                    hProcess,
+                    moduleBase,
+                    GameAddresses::MAX_BALANCE);
+
+            if (newMaxBalanceAddr != 0 &&
+                newMaxBalanceAddr != maxBalanceAddr)
+            {
+                maxBalanceAddr =
+                    newMaxBalanceAddr;
+            }
+
+            float balanceValue =
+                9999.0f;
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    balanceAddr),
+                &balanceValue,
+                sizeof(balanceValue),
+                nullptr);
+
+            WriteProcessMemory(
+                hProcess,
+                reinterpret_cast<LPVOID>(
+                    maxBalanceAddr),
+                &balanceValue,
+                sizeof(balanceValue),
+                nullptr);
+        }
+
         // This continuously re-resolves and enforces ammunition while enabled.
         if (ammoEnabled)
         {
@@ -1672,6 +1849,7 @@ int main()
 
         // The menu is redrawn only when an existing toggle changes.
         if (healthEnabled != lastHealthState ||
+            balanceEnabled != lastBalanceState ||
             ammoEnabled != lastAmmoState ||
             ammoReserveEnabled != lastAmmoReserveState ||
             noRecoilEnabled != lastNoRecoilState ||
@@ -1690,10 +1868,14 @@ int main()
                 ignorePlayerEnabled,
                 weaponBobbingEnabled,
                 speedMultiValue,
-                espEnabled);
+                espEnabled,
+                balanceEnabled);
 
             lastHealthState =
                 healthEnabled;
+
+            lastBalanceState =
+                balanceEnabled;
 
             lastAmmoState =
                 ammoEnabled;
@@ -1723,6 +1905,26 @@ int main()
         // A short sleep prevents the trainer loop from consuming an entire CPU core.
         Sleep(
             5);
+    }
+
+    // Restore balance values if the trainer exits while Infinite Balance is active.
+    if (balanceEnabled)
+    {
+        WriteProcessMemory(
+            hProcess,
+            reinterpret_cast<LPVOID>(
+                balanceAddr),
+            &storedBalance,
+            sizeof(storedBalance),
+            nullptr);
+
+        WriteProcessMemory(
+            hProcess,
+            reinterpret_cast<LPVOID>(
+                maxBalanceAddr),
+            &storedMaxBalance,
+            sizeof(storedMaxBalance),
+            nullptr);
     }
 
     // Restore any weapon values that are still modified if the trainer exits

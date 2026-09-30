@@ -29,6 +29,22 @@ namespace GameAddresses
         "float"
     };
 
+    // Player Object + 0x130 stores the Actor's current balance.
+    const Address BALANCE = {
+        "Balance",
+        0x01A6D6A0,
+        { 0x128, 0x48, 0x60, 0x178, 0x20, 0x130 },
+        "float"
+    };
+
+    // Player Object + 0x134 stores the Actor's maximum balance.
+    const Address MAX_BALANCE = {
+        "Max Balance",
+        0x01A6D6A0,
+        { 0x128, 0x48, 0x60, 0x178, 0x20, 0x134 },
+        "float"
+    };
+
     // Player Object + 0xA0 -> Weapon Object + 0x14C.
     const Address AMMO = {
         "Ammo",
